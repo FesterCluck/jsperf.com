@@ -542,6 +542,111 @@ applet {
 
 }
 
+/* Big O complexity estimates (see server/lib/complexity.js) */
+.complexity-row th {
+	background: #cfd9e2;
+	font-size: .88em;
+	color: #222;
+	text-align: left;
+	vertical-align: top;
+	font-weight: normal;
+	padding: .45em .7em;
+}
+
+.js tbody .complexity-row th:hover, .js tbody .complexity-row th:focus {
+	text-decoration: none;
+	cursor: default;
+}
+
+.complexity-row th div {
+	max-width: none;
+}
+
+.complexity-row td.complexity-breakdown {
+	background: #f4f7fa;
+	padding: .45em .7em;
+	font-size: .88em;
+	vertical-align: top;
+}
+
+.complexity-row td.complexity-total {
+	background: #e7eef5;
+	text-align: center;
+	vertical-align: middle;
+	border-right: 0;
+	font-weight: bold;
+}
+
+.complexity-row th, .complexity-row td {
+	border-bottom: 2px solid #8c9aa6;
+}
+
+.complexity-row td.complexity-total small.complexity-note {
+	font-weight: normal;
+	font-style: italic;
+}
+
+.complexity-legend {
+	font-size: .85em;
+	color: #555;
+}
+
+.call-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.call-list li {
+	padding: .18em 0;
+	border-bottom: 1px dotted #d0d7de;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	min-height: 36px;
+	box-sizing: border-box;
+}
+
+.call-list li:last-child {
+	border-bottom: 0;
+}
+
+.complexity-row th .call-list li {
+	border-bottom-color: #b5c2ce;
+}
+
+.bigo-graph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 3px 5px;
+	border-radius: 4px;
+	border: 1px solid #999;
+	background: #fff;
+	vertical-align: middle;
+	box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.bigo-graph svg {
+	display: block;
+	width: 54px;
+	height: 30px;
+}
+
+.complexity-total .bigo-graph svg {
+	width: 68px;
+	height: 38px;
+}
+
+.bigo-o1 { background: #dff0d8; color: #2b6628; border-color: #a3d490; }
+.bigo-ologn { background: #d9edf7; color: #1d5673; border-color: #94c8e2; }
+.bigo-on { background: #fcf8e3; color: #7d5e24; border-color: #e6d18a; }
+.bigo-onlogn { background: #fce6d4; color: #8c4110; border-color: #e4b28c; }
+.bigo-on2 { background: #f9d6d6; color: #911d1d; border-color: #dfa0a0; }
+.bigo-on3 { background: #f2c4c4; color: #7a1010; border-color: #d18a8a; }
+.bigo-higher { background: #e8b0b0; color: #5e0a0a; border-color: #c07070; }
+.bigo-unknown { background: #eee; color: #666; border: 1px dashed #999; }
+
 /* < 801px */
 @media (max-width: 800px) {
 	table pre, table td.code {

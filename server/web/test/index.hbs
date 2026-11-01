@@ -68,6 +68,60 @@
   {{/if}}
 {{/if}}
 
+{{#if hasComplexity}}
+  <svg width="0" height="0" style="position:absolute; width:0; height:0; overflow:hidden;" aria-hidden="true">
+    <defs>
+      <g id="bigo-guides" fill="none" stroke="#000" stroke-opacity="0.12" stroke-width="1">
+        <path d="M5,23 L52,23"/>
+        <path d="M5,25 Q18,16 52,15"/>
+        <path d="M5,25 L52,4"/>
+        <path d="M5,25 Q26,20 42,3"/>
+        <path d="M5,25 Q16,25 25,3"/>
+        <polyline points="5,2 5,25 52,25" stroke-opacity="0.35" stroke-width="1.2"/>
+      </g>
+      <g id="curve-o1">
+        <use href="#bigo-guides"/>
+        <path d="M5,23 L52,23" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="52" cy="23" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-ologn">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q18,16 52,15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="52" cy="15" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-on">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 L52,4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="52" cy="4" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-onlogn">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q26,20 42,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="42" cy="3" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-on2">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q16,25 25,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="25" cy="3" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-on3">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q11,25 17,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="17" cy="3" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-higher">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q8,25 11,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="11" cy="3" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-unknown">
+        <use href="#bigo-guides"/>
+        <text x="29" y="21" text-anchor="middle" font-size="20" font-weight="bold" fill="currentColor">?</text>
+      </g>
+    </defs>
+  </svg>
+{{/if}}
+
 <section id="runner">
   <h2>Test runner</h2>
   <p id="firebug"><strong>Warning! For accurate results, please disable Firebug before running the tests. <a href="{{@root.base}}/faq#firebug-warning">(Why?)</a></strong></p>
@@ -98,9 +152,44 @@
           </td>
           <td id="results-{{inc @index}}" class="results">pending…</td>
         </tr>
+        {{#with complexityView}}
+          <tr class="complexity-row{{#if unknown}} complexity-unknown{{/if}}" title="Estimated Big-O complexity, derived statically from the source code (not measured)">
+            <th scope="row">
+              <ul class="call-list">
+                {{#each calls}}
+                  <li><code>{{code}}</code></li>
+                {{else}}
+                  <li><em>no function calls</em></li>
+                {{/each}}
+                {{#if more}}<li><em>+{{more}} more</em></li>{{/if}}
+              </ul>
+            </th>
+            <td class="complexity-breakdown">
+              <ul class="call-list">
+                {{#each calls}}
+                  <li>
+                    <span class="bigo-graph bigo-{{cls}}" title="{{label}} ({{name}}), estimated"><svg viewBox="0 0 56 28" role="img" aria-label="{{label}}"><use href="#{{curve}}"/></svg></span>
+                  </li>
+                {{else}}
+                  <li></li>
+                {{/each}}
+                {{#if more}}<li></li>{{/if}}
+              </ul>
+            </td>
+            <td class="complexity-total">
+              <span class="bigo-graph bigo-{{overall.cls}}" title="{{overall.label}} ({{overall.name}}), estimated"><svg viewBox="0 0 56 28" role="img" aria-label="{{overall.label}}"><use href="#{{overall.curve}}"/></svg></span>
+              <small>Overall{{#unless unknown}}: {{overall.label}}{{/unless}}</small>
+              <small class="complexity-note">{{#if unknown}}unknown{{else}}estimated{{/if}}</small>
+            </td>
+          </tr>
+        {{/with}}
       {{/each}}
     </tbody>
   </table>
+
+  {{#if hasComplexity}}
+    <p class="complexity-legend">Big-O rows are <strong>estimates</strong> derived statically from the source code of each test (nothing is run), and the graphs are illustrative. &ldquo;Unknown&rdquo; means the analysis could not decide.</p>
+  {{/if}}
 
   {{#compare page.maxRev 2}}
     <p>You can <a href="{{@root.base}}/{{page.slug}}{{#compare 1 page.revision}}/{{page.revision}}{{/compare}}/edit" rel="nofollow">edit these tests or add even more tests to this page</a> by appending <code>/edit</code> to the URL.</p>

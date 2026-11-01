@@ -1,0 +1,45 @@
+// 1. O(n) linear scan using shared compareAsc()
+function linearFind(arr, target) {
+  for (var i = 0; i < arr.length; i++) {
+    if (compareAsc(arr[i], target) === 0) return i;
+  }
+  return -1;
+}
+
+// 2. O(n log n) bottom-up merge sort using shared compareAsc()
+function mergeSort(input) {
+  var arr = input.slice();
+  var n = arr.length;
+  var aux = new Array(n);
+  for (var width = 1; width < n; width *= 2) {
+    for (var i = 0; i < n; i += 2 * width) {
+      var left = i;
+      var mid = Math.min(i + width, n);
+      var right = Math.min(i + 2 * width, n);
+      var l = left, r = mid, k = left;
+      while (l < mid && r < right) {
+        aux[k++] = compareAsc(arr[l], arr[r]) <= 0 ? arr[l++] : arr[r++];
+      }
+      while (l < mid) aux[k++] = arr[l++];
+      while (r < right) aux[k++] = arr[r++];
+      for (var c = left; c < right; c++) arr[c] = aux[c];
+    }
+  }
+  return arr;
+}
+
+// 3. O(n) two-pointer pair accumulation using shared hashValue()
+function twoPointerDigest(sorted) {
+  var lo = 0, hi = sorted.length - 1, acc = 0;
+  while (lo < hi) {
+    acc = (acc + hashValue(sorted[lo++] + sorted[hi--])) | 0;
+  }
+  return acc;
+}
+
+var manuallySorted = mergeSort(sharedData);
+var total = checksum(manuallySorted) ^ twoPointerDigest(manuallySorted);
+for (var k = 0; k < targetKeys.length; k++) {
+  total += linearFind(sharedData, targetKeys[k]);
+}
+sink = total;

@@ -1,0 +1,33 @@
+<div id="bench-root"></div>
+<script>
+// Shared helper functions used across all benchmark test cases
+function generateDataset(size, seed) {
+  var out = new Array(size);
+  var state = seed || 1;
+  for (var i = 0; i < size; i++) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    out[i] = state % 10000;
+  }
+  return out;
+}
+
+function hashValue(val) {
+  var h = (val ^ 61) ^ (val >>> 16);
+  h = h + (h << 3);
+  h = h ^ (h >>> 4);
+  h = Math.imul(h, 0x27d4eb2d);
+  return (h ^ (h >>> 15)) >>> 0;
+}
+
+function compareAsc(a, b) {
+  return a - b;
+}
+
+function checksum(arr) {
+  var acc = 0;
+  for (var i = 0; i < arr.length; i++) {
+    acc = (acc + hashValue(arr[i])) | 0;
+  }
+  return acc;
+}
+</script>

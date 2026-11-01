@@ -1,11 +1,20 @@
 'use strict';
 
+const complexity = require('../lib/complexity');
+
 const name = 'services/pages';
 
 const register = (server, options) => {
   const pagesRepo = server.plugins['repositories/pages'];
   const testsRepo = server.plugins['repositories/tests'];
   const commentsRepo = server.plugins['repositories/comments'];
+
+  // static Big-O estimates, computed whenever tests are written (the page's setup code is needed to resolve calls)
+  const withComplexity = (payload) => {
+    const tests = payload.test || [];
+    const results = complexity.analyzePage(payload, tests);
+    return tests.map((test, i) => Object.assign({}, test, { complexity: results[i] }));
+  };
 
   server.expose('checkIfSlugAvailable', async (server, slug) => {
     // routes registered by the app should be considered reserved
@@ -25,7 +34,7 @@ const register = (server, options) => {
     page.published = new Date();
 
     const pageID = await pagesRepo.create(page);
-    await testsRepo.bulkCreate(pageID, payload.test);
+    await testsRepo.bulkCreate(pageID, withComplexity(payload));
     return pageID;
   });
 
@@ -49,7 +58,7 @@ const register = (server, options) => {
       currentPageID = await pagesRepo.create(page);
     }
 
-    await testsRepo.bulkUpdate(currentPageID, payload.test, isOwn);
+    await testsRepo.bulkUpdate(currentPageID, withComplexity(payload), isOwn);
     return resultingRevision;
   });
 
@@ -66,6 +75,25 @@ const register = (server, options) => {
 
   server.expose('updateHits', (...args) => pagesRepo.updateHits(...args));
 
+  // tests saved before the complexity column existed are analyzed on first view and then persisted
+  const fillMissingComplexity = async (page, tests) => {
+    const missing = tests.filter((test) => !test.complexity);
+    if (missing.length === 0) {
+      return;
+    }
+
+    const results = complexity.analyzePage(page, missing);
+    await Promise.all(missing.map(async (test, i) => {
+      test.complexity = results[i];
+      try {
+        await testsRepo.setComplexity(test.testID, results[i]);
+      } catch (err) {
+        // the estimate is still shown, it will be stored on a later view
+        server.log(['error'], err);
+      }
+    }));
+  };
+
   server.expose('getBySlug', async function (slug, rev) {
     server.log(['debug'], `${name}::getBySlug: ${JSON.stringify(arguments)}`);
 
@@ -79,6 +107,7 @@ const register = (server, options) => {
 
     // find its tests, other revisions of page and comments for page
     const tests = await testsRepo.findByPageID(page.id);
+    await fillMissingComplexity(page, tests);
     const revisions = await pagesRepo.findBySlug(slug);
     const comments = await commentsRepo.findByPageID(page.id);
 

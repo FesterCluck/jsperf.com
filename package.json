@@ -40,6 +40,7 @@
     "@hapi/scooter": "^8.0.0",
     "@hapi/vision": "^7.0.3",
     "@hapi/yar": "^11.0.3",
+    "acorn": "^8.19.0",
     "confidence": "^5.0.1",
     "dotenv": "^18.0.9",
     "font-awesome": "^4.7.0",

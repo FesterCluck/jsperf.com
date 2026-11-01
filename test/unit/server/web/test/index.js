@@ -115,6 +115,116 @@ lab.experiment('web/test plugin', function () {
     Code.expect(secondRevLi.children('a').first().attr('href')).to.equal(request.url + '/' + revisions[1].revision);
   });
 
+  lab.experiment('complexity rows', function () {
+    const basePage = () => ({
+      id: 1,
+      slug,
+      revision: 1,
+      title: 'Oh Yea',
+      info: '',
+      setup: '',
+      teardown: '',
+      initHTML: '',
+      visible: 'y',
+      author: 'Max',
+      authorEmail: 'm@b.co',
+      authorURL: 'b.co',
+      hits: 0,
+      published: now,
+      updated: now
+    });
+
+    const estimate = {
+      estimate: true,
+      overall: 'on',
+      calls: [{ code: 'build(shared)', cls: 'on' }, { code: 'find(x)', cls: 'ologn' }, { code: 'weird(x)', cls: 'unknown' }],
+      more: 3
+    };
+
+    lab.test('renders a complexity row under each test, before any run, plus one sprite', async function () {
+      const tests = [
+        { testID: 1, title: 'one', code: 'build(shared)', defer: 'n', complexity: estimate },
+        { testID: 2, title: 'two', code: 'x()', defer: 'n', complexity: { overall: 'o1', calls: [] } }
+      ];
+      pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), tests, [], []]));
+
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      const $ = cheerio.load(response.payload);
+
+      Code.expect($('svg #curve-on3, svg #curve-unknown, svg #curve-o1').length).to.equal(3);
+      Code.expect($('#bigo-guides').length).to.equal(1);
+
+      // result rows are still addressable by id and come first in each pair
+      Code.expect($('#title-1').length).to.equal(1);
+      Code.expect($('#results-2').text()).to.equal('pending…');
+      const rows = $('#test-table tbody tr');
+      Code.expect(rows.length).to.equal(4);
+      Code.expect(rows.eq(0).find('#results-1').length).to.equal(1);
+      Code.expect(rows.eq(1).hasClass('complexity-row')).to.be.true();
+      Code.expect(rows.eq(3).hasClass('complexity-row')).to.be.true();
+      Code.expect(rows.eq(1).attr('title')).to.include('Estimated');
+
+      const first = rows.eq(1);
+      Code.expect(first.find('th .call-list code').map((i, el) => $(el).text()).get()).to.equal(['build(shared)', 'find(x)', 'weird(x)']);
+      Code.expect(first.find('th li').last().text()).to.include('+3 more');
+      Code.expect(first.find('td.complexity-breakdown .bigo-graph').map((i, el) => $(el).attr('class')).get()).to.equal(['bigo-graph bigo-on', 'bigo-graph bigo-ologn', 'bigo-graph bigo-unknown']);
+      Code.expect(first.find('td.complexity-breakdown use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-ologn', '#curve-unknown']);
+      Code.expect(first.find('td.complexity-breakdown .bigo-graph').first().attr('title')).to.equal('O(n) (linear), estimated');
+      Code.expect(first.find('td.complexity-total .bigo-graph').hasClass('bigo-on')).to.be.true();
+      Code.expect(first.find('td.complexity-total small').first().text()).to.equal('Overall: O(n)');
+      Code.expect(first.find('td.complexity-total small').last().text()).to.equal('estimated');
+      Code.expect(first.hasClass('complexity-unknown')).to.be.false();
+
+      const second = rows.eq(3);
+      Code.expect(second.find('th').text()).to.include('no function calls');
+      Code.expect($('.complexity-legend').text()).to.include('estimates');
+    });
+
+    lab.test('marks undecidable results as unknown', async function () {
+      const tests = [{ testID: 1, title: 'one', code: 'mystery()', defer: 'n', complexity: { overall: 'unknown', calls: [{ code: 'mystery()', cls: 'unknown' }] } }];
+      pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), tests, [], []]));
+
+      const $ = cheerio.load((await server.inject(request)).payload);
+      const row = $('tr.complexity-row');
+      Code.expect(row.hasClass('complexity-unknown')).to.be.true();
+      Code.expect(row.find('td.complexity-total .bigo-graph').hasClass('bigo-unknown')).to.be.true();
+      Code.expect(row.find('td.complexity-total small').first().text()).to.equal('Overall');
+      Code.expect(row.find('td.complexity-total small').last().text()).to.equal('unknown');
+    });
+
+    lab.test('escapes code in the call list and survives a stored JSON string', async function () {
+      const stored = JSON.stringify({ overall: 'o1', calls: [{ code: '<img src=x onerror=alert(1)>()', cls: 'o1' }] });
+      pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'x()', defer: 'n', complexity: stored }], [], []]));
+
+      const response = await server.inject(request);
+      Code.expect(response.payload).to.not.include('<img src=x');
+      Code.expect(response.payload).to.include('&lt;img src&#x3D;x');
+    });
+
+    lab.test('shows nothing when a test has no usable estimate', async function () {
+      pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'x()', defer: 'n', complexity: null }], [], []]));
+
+      const $ = cheerio.load((await server.inject(request)).payload);
+      Code.expect($('tr.complexity-row').length).to.equal(0);
+      Code.expect($('#bigo-guides').length).to.equal(0);
+      Code.expect($('.complexity-legend').length).to.equal(0);
+    });
+
+    lab.test('works under a base path', async function () {
+      const prefixed = await Support.createServer({ yar: true, auth: true, scooter: true, basePath: '/next', plugins: [MockPagesService, MockCommentService, TestPlugin] });
+      sinon.stub(prefixed.plugins['services/pages'], 'getBySlug').returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'x()', defer: 'n', complexity: estimate }], [], []]));
+      sinon.stub(prefixed.plugins['services/pages'], 'updateHits').returns(Promise.resolve());
+
+      const response = await prefixed.inject({ method: 'GET', url: '/next/' + slug });
+      Code.expect(response.statusCode).to.equal(200);
+      const $ = cheerio.load(response.payload);
+      // fragment references stay relative to the document, so they work with any prefix
+      Code.expect($('link[rel=stylesheet]').first().attr('href')).to.startWith('/next/public/');
+      Code.expect($('tr.complexity-row use').first().attr('href')).to.equal('#curve-on');
+    });
+  });
+
   lab.test('it responds with highlighted test page for slug', async function () {
     pagesServiceStub.getBySlug.returns(Promise.resolve([{
       id: 1,

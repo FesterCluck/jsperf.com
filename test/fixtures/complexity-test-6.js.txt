@@ -1,0 +1,43 @@
+// 1. O(n) sliding window sum
+function slidingWindowDigest(arr, winSize) {
+  var sum = 0, acc = 0;
+  for (var i = 0; i < arr.length; i++) {
+    sum += arr[i];
+    if (i >= winSize) sum -= arr[i - winSize];
+    acc = (acc + hashValue(sum)) | 0;
+  }
+  return acc;
+}
+
+// 2. O(n^2) quadratic insertion sort using shared compareAsc()
+function insertionSort(input) {
+  var arr = input.slice();
+  for (var i = 1; i < arr.length; i++) {
+    var key = arr[i];
+    var j = i - 1;
+    while (j >= 0 && compareAsc(arr[j], key) > 0) {
+      arr[j + 1] = arr[j];
+      j--;
+    }
+    arr[j + 1] = key;
+  }
+  return arr;
+}
+
+// 3. O(n^2) quadratic pairwise distance matrix reduction
+function pairwiseDistanceSum(arr) {
+  var acc = 0;
+  var limit = Math.min(arr.length, 24);
+  for (var i = 0; i < limit; i++) {
+    for (var j = i + 1; j < limit; j++) {
+      var diff = arr[i] - arr[j];
+      acc += diff < 0 ? -diff : diff;
+    }
+  }
+  return acc;
+}
+
+var sortedQuad = insertionSort(sharedData);
+var total = checksum(sortedQuad) ^ slidingWindowDigest(sortedQuad, 4);
+total = (total + pairwiseDistanceSum(sortedQuad)) | 0;
+sink = total;
