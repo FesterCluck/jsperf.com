@@ -1,10 +1,10 @@
-# jsperf.com [![CI](https://github.com/jsperf/jsperf.com/actions/workflows/ci.yml/badge.svg)](https://github.com/jsperf/jsperf.com/actions/workflows/ci.yml)
+# jsperf.com [![CI](https://github.com/FesterCluck/jsperf.com/actions/workflows/ci.yml/badge.svg)](https://github.com/FesterCluck/jsperf.com/actions/workflows/ci.yml)
 
 ## How to run a local copy of jsPerf
 
 ### Prerequisites
 
-1. [Node.js](https://nodejs.org/en/) (Node.js 22 or newer; see preferred version in [`.nvmrc`](https://github.com/jsperf/jsperf.com/blob/master/.nvmrc))
+1. [Node.js](https://nodejs.org/en/) (Node.js 22 or newer; see preferred version in [`.nvmrc`](https://github.com/FesterCluck/jsperf.com/blob/master/.nvmrc))
 2. [MySQL](https://dev.mysql.com/downloads/mysql/) 8.0 or newer (8.x and 9.x are supported; the default `caching_sha2_password` authentication works)
   1. Install
     1. macOS: `brew install mysql`
@@ -73,7 +73,7 @@ Run the app with `HOST=127.0.0.1 PORT=3199 BASE_PATH=/next DOMAIN=example.com SC
 npm start
 ```
 
-Hopefully everything smoothly started up and you're ready to start [contributing](CONTRIBUTING.md). If not, check out the [wiki](https://github.com/jsperf/jsperf.com/wiki/Local-Development-Debugging) for debugging tips.
+Hopefully everything smoothly started up and you're ready to start [contributing](CONTRIBUTING.md). If not, check out the [wiki](https://github.com/FesterCluck/jsperf.com/wiki/Local-Development-Debugging) for debugging tips.
 
 ## Big-O complexity estimates
 

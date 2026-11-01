@@ -17,16 +17,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:jsperf/jsperf.com.git"
+    "url": "git@github.com:FesterCluck/jsperf.com.git"
   },
   "keywords": [
     "jsperf"
   ],
   "bugs": {
-    "url": "https://github.com/jsperf/jsperf.com/issues"
+    "url": "https://github.com/FesterCluck/jsperf.com/issues"
   },
   "license": "MIT",
-  "homepage": "https://github.com/jsperf/jsperf.com",
+  "homepage": "https://github.com/FesterCluck/jsperf.com",
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@hapi/catbox": "^12.1.1",

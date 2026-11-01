@@ -10,7 +10,7 @@ npm run watch
 
 ## Building the client
 
-If you make any changes inside [`client/`](https://github.com/jsperf/jsperf.com/tree/master/client), then you'll need to manually re-build the final asset.
+If you make any changes inside [`client/`](https://github.com/FesterCluck/jsperf.com/tree/master/client), then you'll need to manually re-build the final asset.
 
 ```
 npm run build

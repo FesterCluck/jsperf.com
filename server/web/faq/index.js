@@ -87,7 +87,7 @@ exports.plugin = {
             }, {
               slug: 'additional-features',
               title: 'Will you implement <var>[feature XYZ]</var>?',
-              answer: 'Why not? I’m <a href="https://github.com/jsperf/jsperf.com/issues" rel="nofollow">open to suggestions</a>, so please let me know if you have an idea that could make jsPerf more awesome.'
+              answer: 'Why not? I’m <a href="https://github.com/FesterCluck/jsperf.com/issues" rel="nofollow">open to suggestions</a>, so please let me know if you have an idea that could make jsPerf more awesome.'
             }
           ]
         });
