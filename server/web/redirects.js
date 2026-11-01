@@ -1,5 +1,7 @@
 'use strict';
 
+const basePath = require('../lib/basePath');
+
 const register = (server) => {
   const redirects = [
     {
@@ -26,7 +28,7 @@ const register = (server) => {
     }
   ];
 
-  const handler = (url) => (request, h) => h.redirect(url).permanent();
+  const handler = (url) => (request, h) => h.redirect(basePath.url(request, url)).permanent();
 
   for (const { path, redirect } of redirects) {
     server.route({

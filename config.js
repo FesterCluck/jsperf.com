@@ -1,5 +1,6 @@
 require('dotenv').config({ quiet: true });
 const Joi = require('joi');
+const basePath = require('./server/lib/basePath');
 
 const prodOptional = {
   is: 'production',
@@ -11,6 +12,9 @@ const envSchema = Joi.object({
   SCHEME: Joi.string().valid('http', 'https').optional().default('http'),
   NODE_ENV: Joi.string().optional().default('development'),
   PORT: Joi.number().optional().default(3000),
+  HOST: Joi.string().optional(),
+  BASE_PATH: Joi.string().allow('').optional().default(''),
+  COOKIE_NAME: Joi.string().optional().default('sid-jsperf'),
   DOMAIN: Joi.string().optional().default('localhost'),
   COOKIE_PASS: Joi.string().required(),
   MYSQL_HOST: Joi.string().optional().default('localhost'),
@@ -46,12 +50,14 @@ const config = {
   $meta: 'jsPerf.com',
   env: result.value.NODE_ENV,
   port: result.value.PORT,
+  host: result.value.HOST,
+  basePath: basePath.normalize(result.value.BASE_PATH),
   domain: result.value.DOMAIN,
   scheme: result.value.SCHEME,
   auth: {
     session: {
       pass: result.value.COOKIE_PASS,
-      name: 'sid-jsperf',
+      name: result.value.COOKIE_NAME,
       secure: {
         $filter: 'scheme',
         https: true,

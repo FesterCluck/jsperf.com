@@ -75,6 +75,37 @@ lab.experiment('Config', () => {
     });
   });
 
+  lab.experiment('deployment under a prefix', () => {
+    lab.test('it defaults to no base path, host or custom cookie name', () => {
+      delete process.env.BASE_PATH;
+      delete process.env.HOST;
+      delete process.env.COOKIE_NAME;
+      const config = load();
+      Code.expect(config.get('/basePath')).to.equal('');
+      Code.expect(config.get('/host')).to.not.exist();
+      Code.expect(config.get('/auth/session/name')).to.equal('sid-jsperf');
+    });
+
+    lab.test('it normalizes BASE_PATH', () => {
+      for (const value of ['next', '/next', '/next/', 'next/', ' /next// ']) {
+        process.env.BASE_PATH = value;
+        Code.expect(load().get('/basePath')).to.equal('/next');
+      }
+      process.env.BASE_PATH = '/';
+      Code.expect(load().get('/basePath')).to.equal('');
+      process.env.BASE_PATH = '';
+      Code.expect(load().get('/basePath')).to.equal('');
+    });
+
+    lab.test('it reads HOST and COOKIE_NAME', () => {
+      process.env.HOST = '127.0.0.1';
+      process.env.COOKIE_NAME = 'sid-next';
+      const config = load();
+      Code.expect(config.get('/host')).to.equal('127.0.0.1');
+      Code.expect(config.get('/auth/session/name')).to.equal('sid-next');
+    });
+  });
+
   lab.experiment('removed settings', () => {
     lab.test('it no longer has GitHub OAuth config', () => {
       Code.expect(load().get('/auth/oauth')).to.not.exist();

@@ -4,6 +4,7 @@ const Boom = require('@hapi/boom');
 const hljs = require('highlight.js');
 const regex = require('../../lib/regex');
 const schema = require('../../lib/schema');
+const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 
 const register = (server, options) => {
@@ -67,7 +68,7 @@ const register = (server, options) => {
           headTitle: page.title,
           benchmark: true,
           showAtom: {
-            slug: request.path.slice(1) // remove slash
+            slug: basePath.slug(request)
           },
           jsClass: true,
           isAdmin,
@@ -169,7 +170,7 @@ const register = (server, options) => {
         throw err;
       }
 
-      return h.redirect(`/${request.params.testSlug}/${request.params.rev}`);
+      return h.redirect(basePath.url(request, `/${request.params.testSlug}/${request.params.rev}`));
     }
   });
 

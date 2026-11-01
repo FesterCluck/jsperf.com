@@ -5,14 +5,14 @@
 
 <h2>What is jsPerf?</h2>
 
-<p>jsPerf aims to provide an easy way to create and share <a href="/browse" title="View some examples by browsing the jsPerf test cases">test cases</a>, comparing the performance of different JavaScript snippets by running benchmarks. For more information, see <a href="/faq" title="Frequently asked questions">the FAQ</a>.</p>
+<p>jsPerf aims to provide an easy way to create and share <a href="{{@root.base}}/browse" title="View some examples by browsing the jsPerf test cases">test cases</a>, comparing the performance of different JavaScript snippets by running benchmarks. For more information, see <a href="{{@root.base}}/faq" title="Frequently asked questions">the FAQ</a>.</p>
 
 <h2>Create a test case</h2>
 {{#if credentials}}
 
 {{error genError tag="p"}}
 
-<form action="/" method="post">
+<form action="{{@root.base}}/" method="post">
   <input type="hidden" name="crumb" value="{{crumb}}">
   <fieldset>
 
@@ -59,7 +59,7 @@
       <label for="slug">Slug <em title="This field is required">*</em> </label>
       <input type="text" name="slug" id="slug" pattern="{{slugPattern}}" required value="{{slug}}">
       {{error slugError}}
-      <p class="preview">Test case URL will be <samp>{{scheme}}://{{domain}}/<mark>{{#if slug}}{{slug}}{{else}}slug{{/if}}</mark></samp></p>
+      <p class="preview">Test case URL will be <samp>{{scheme}}://{{domain}}{{@root.base}}/<mark>{{#if slug}}{{slug}}{{else}}slug{{/if}}</mark></samp></p>
     </div>
     <div>
       <label for="visible">Published </label>
@@ -81,11 +81,11 @@
         <p id="add-libraries">Include JavaScript libraries as follows: <code>&lt;script src="https://cdn.example.com/library.js">&lt;/script></code></p>
       </div>
       <div>
-        <label for="setup">Define <code>setup</code> for all tests <span>(variables, functions, arrays or other objects that will be used in the tests)</span> <span>(runs before each clocked test loop, outside of the timed code region)</span> <span>(e.g. define local test variables, reset global variables, clear <code>canvas</code>, etc.)</span> <span>(<a href="/faq#setup-teardown">see FAQ</a>)</span> </label>
+        <label for="setup">Define <code>setup</code> for all tests <span>(variables, functions, arrays or other objects that will be used in the tests)</span> <span>(runs before each clocked test loop, outside of the timed code region)</span> <span>(e.g. define local test variables, reset global variables, clear <code>canvas</code>, etc.)</span> <span>(<a href="{{@root.base}}/faq#setup-teardown">see FAQ</a>)</span> </label>
         <textarea name="setup" id="setup" maxlength="{{mediumTextLength}}">{{setup}}</textarea>
       </div>
       <div>
-        <label for="teardown">Define <code>teardown</code> for all tests <span>(runs after each clocked test loop, outside of the timed code region)</span> <span>(<a href="/faq#setup-teardown">see FAQ</a>)</span> </label>
+        <label for="teardown">Define <code>teardown</code> for all tests <span>(runs after each clocked test loop, outside of the timed code region)</span> <span>(<a href="{{@root.base}}/faq#setup-teardown">see FAQ</a>)</span> </label>
         <textarea name="teardown" id="teardown" maxlength="{{mediumTextLength}}">{{teardown}}</textarea>
       </div>
     </fieldset>
@@ -105,7 +105,7 @@
             <label for="test[{{@index}}][defer]">Async</label>
             <label class="inline">
               <input type="checkbox" value="y" name="test[{{@index}}][defer]" id="test[{{@index}}][defer]" {{#compare defer "y" operator="==="}}checked{{/compare}}>
-              (check if this is an <a href="/faq#async">asynchronous test</a>)
+              (check if this is an <a href="{{@root.base}}/faq#async">asynchronous test</a>)
             </label>
           </div>
           <div>
@@ -124,5 +124,5 @@
   </fieldset>
 </form>
 {{else}}
-   <a class="login" href="/login">Log in to Create Test Cases</a> or <a href="/register">register</a>
+   <a class="login" href="{{@root.base}}/login">Log in to Create Test Cases</a> or <a href="{{@root.base}}/register">register</a>
 {{/if}}

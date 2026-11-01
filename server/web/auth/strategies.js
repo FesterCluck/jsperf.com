@@ -13,7 +13,7 @@ exports.plugin = {
         isSecure: options.session.isSecure,
         isHttpOnly: true,
         isSameSite: 'Lax',
-        path: '/',
+        path: options.session.path || '/',
         ttl: 7 * 24 * 60 * 60 * 1000
       },
       redirectTo: false

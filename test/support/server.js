@@ -22,8 +22,8 @@ exports.mock = (name, methods) => ({
   }
 });
 
-exports.createServer = async ({ views = true, yar = false, auth = false, scooter = false, plugins = [] } = {}) => {
-  const server = Hapi.server();
+exports.createServer = async ({ views = true, yar = false, auth = false, scooter = false, plugins = [], basePath = '' } = {}) => {
+  const server = Hapi.server({ app: { basePath } });
 
   if (auth) {
     await server.register(require('@hapi/cookie'));
@@ -45,6 +45,7 @@ exports.createServer = async ({ views = true, yar = false, auth = false, scooter
         relativeTo: root,
         context: (request) => ({
           credentials: request && request.auth ? request.auth.credentials : null,
+          base: basePath,
           scheme: 'http',
           domain: 'jsperf.test'
         })
@@ -63,7 +64,7 @@ exports.createServer = async ({ views = true, yar = false, auth = false, scooter
     await server.register(require('@hapi/scooter'));
   }
 
-  await server.register(plugins);
+  await server.register(plugins, basePath ? { routes: { prefix: basePath } } : {});
   await server.initialize();
 
   return server;

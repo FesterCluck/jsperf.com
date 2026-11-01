@@ -65,7 +65,8 @@ lab.experiment('Pages Service', function () {
       tableStub = s.stub().returns([{ path: '/' }]);
 
       serverMock = {
-        table: tableStub
+        table: tableStub,
+        settings: { app: {} }
       };
     });
 
@@ -75,12 +76,22 @@ lab.experiment('Pages Service', function () {
       tableStub = s.stub().returns([{ path: '/' + testSlug }]);
 
       serverMock = {
-        table: tableStub
+        table: tableStub,
+        settings: { app: {} }
       };
 
       const isAvail = await pages.checkIfSlugAvailable(serverMock, testSlug);
       Code.expect(isAvail).to.be.false();
       Code.expect(pagesRepoStub.get.called).to.be.false();
+    });
+
+    lab.test('treats prefixed app routes as reserved when mounted under a base path', async function () {
+      serverMock = {
+        table: s.stub().returns([{ path: '/next/browse' }]),
+        settings: { app: { basePath: '/next' } }
+      };
+
+      Code.expect(await pages.checkIfSlugAvailable(serverMock, 'browse')).to.be.false();
     });
 
     lab.test('returns error if getting page fails', async function () {

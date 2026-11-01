@@ -9,7 +9,8 @@ const register = (server, options) => {
 
   server.expose('checkIfSlugAvailable', async (server, slug) => {
     // routes registered by the app should be considered reserved
-    if (server.table().some((route) => route.path.substr(1) === slug)) {
+    const prefixLength = (server.settings.app.basePath || '').length;
+    if (server.table().some((route) => route.path.slice(prefixLength + 1) === slug)) {
       return false;
     }
 

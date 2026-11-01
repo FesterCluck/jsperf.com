@@ -6,20 +6,20 @@
         <h4>Tests</h4>
         <ul>
           <li>
-            <a href="/">Add</a>
+            <a href="{{@root.base}}/">Add</a>
           </li>
 
           {{#if credentials}}
             <li>
-              <a href="/browse/{{credentials.username}}">My tests</a>
+              <a href="{{@root.base}}/browse/{{credentials.username}}">My tests</a>
             </li>
           {{/if}}
 
           <li>
-            <a href="/browse">Latest</a>
+            <a href="{{@root.base}}/browse">Latest</a>
           </li>
           <li>
-            <a href="/popular">Popular</a>
+            <a href="{{@root.base}}/popular">Popular</a>
           </li>
         </ul>
       </li>
@@ -28,13 +28,13 @@
         <h4>Info</h4>
         <ul>
           <li>
-            <a href="/faq">FAQ</a>
+            <a href="{{@root.base}}/faq">FAQ</a>
           </li>
           <li>
-            <a href="/testimonials">Testimonials</a>
+            <a href="{{@root.base}}/testimonials">Testimonials</a>
           </li>
           <li>
-            <a href="/contributors">Contributors</a>
+            <a href="{{@root.base}}/contributors">Contributors</a>
           </li>
           <li>
             <a href="https://benchmarkjs.com/">Benchmark.js</a>
@@ -57,7 +57,7 @@
   </footer>
 
   {{#if benchmark}}
-    <script src="/public/_js/test.js"></script>
+    <script src="{{@root.base}}/public/_js/test.js"></script>
     <script>
       {{#each page.test}}
         ui.add(
@@ -80,12 +80,13 @@
     {{{ page.initHTML }}}
   {{else}}
     {{#if mainJS}}
-      <script src="/public/_vendor/jquery/jquery.min.js"></script>
+      <script>window.jsPerfBase = '{{@root.base}}';</script>
+      <script src="{{@root.base}}/public/_vendor/jquery/jquery.min.js"></script>
 
       {{#if debug}}
-        <script src="/public/_js/main.src.js"></script>
+        <script src="{{@root.base}}/public/_js/main.src.js"></script>
       {{else}}
-        <script src="/public/_js/main.js"></script>
+        <script src="{{@root.base}}/public/_js/main.js"></script>
       {{/if}}
     {{/if}}
   {{/if}}

@@ -1,19 +1,19 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 	<url>
-		<loc>{{scheme}}://{{domain}}/</loc>
+		<loc>{{scheme}}://{{domain}}{{@root.base}}/</loc>
 		<changefreq>daily</changefreq>
 	</url>
 	<url>
-		<loc>{{scheme}}://{{domain}}/browse</loc>
+		<loc>{{scheme}}://{{domain}}{{@root.base}}/browse</loc>
 		<changefreq>daily</changefreq>
 	</url>
 	<url>
-		<loc>{{scheme}}://{{domain}}/faq</loc>
+		<loc>{{scheme}}://{{domain}}{{@root.base}}/faq</loc>
 	</url>
 
 	{{#each items}}
 		<url>
-			<loc>{{../scheme}}://{{../domain}}/{{slug}}{{#compare revision 1}}/{{revision}}{{/compare}}</loc>
+			<loc>{{../scheme}}://{{../domain}}{{@root.base}}/{{slug}}{{#compare revision 1}}/{{revision}}{{/compare}}</loc>
 		</url>
 	{{/each}}
 </urlset>

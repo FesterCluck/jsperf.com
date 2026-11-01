@@ -1,5 +1,5 @@
 {{#if credentials}}
-<h1>Editing <a href="/{{page.slug}}{{#compare 1 page.revision}}/{{page.revision}}{{/compare}}">{{addCode page.title}}</a></h1>
+<h1>Editing <a href="{{@root.base}}/{{page.slug}}{{#compare 1 page.revision}}/{{page.revision}}{{/compare}}">{{addCode page.title}}</a></h1>
 <p>
 {{#if isOwn}}
 Since it’s your test case, this edit will overwrite the current revision without creating a new URL.
@@ -105,7 +105,7 @@ This edit will create a new revision.
           </span>
           <span>(e.g. define local test variables, reset global variables, clear <code>canvas</code>, etc.)
           </span>
-          <span>(<a href="/faq#setup-teardown">see FAQ</a>)
+          <span>(<a href="{{@root.base}}/faq#setup-teardown">see FAQ</a>)
           </span>
         </label>
         <textarea name="setup" id="setup" maxlength="{{mediumTextLength}}">{{page.setup}}</textarea>
@@ -114,7 +114,7 @@ This edit will create a new revision.
         <label for="teardown">Define <code>teardown</code> for all tests
           <span>(runs after each clocked test loop, outside of the timed code region)
           </span>
-          <span>(<a href="/faq#setup-teardown">see FAQ</a>)
+          <span>(<a href="{{@root.base}}/faq#setup-teardown">see FAQ</a>)
           </span>
         </label>
         <textarea name="teardown" id="teardown" maxlength="{{mediumTextLength}}">{{page.teardown}}</textarea>
@@ -134,7 +134,7 @@ This edit will create a new revision.
           <label for="test[{{@index}}][defer]">Async </label>
           <label class="inline">
             <input type="checkbox" value="y" name="test[{{@index}}][defer]" id="test[{{@index}}][defer]" {{#compare defer "y" operator="==="}} checked{{/compare}}>
-            (check if this is an <a href="/faq#async">asynchronous test</a>)
+            (check if this is an <a href="{{@root.base}}/faq#async">asynchronous test</a>)
           </label>
         </div>
         <div>
@@ -158,5 +158,5 @@ This edit will create a new revision.
   </fieldset>
 </form>
 {{else}}
-   <a class="login" href="/login">Log in to Edit Test Cases</a> or <a href="/register">register</a>
+   <a class="login" href="{{@root.base}}/login">Log in to Edit Test Cases</a> or <a href="{{@root.base}}/register">register</a>
 {{/if}}

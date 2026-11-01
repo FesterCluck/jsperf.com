@@ -1,5 +1,6 @@
 'use strict';
 
+const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const schema = require('../../lib/schema');
 
@@ -108,7 +109,7 @@ const register = (server) => {
         const own = request.yar.get('own') || {};
         own[resultPageId] = true;
         request.yar.set('own', own);
-        return h.redirect(`/${payload.slug}`);
+        return h.redirect(basePath.url(request, `/${payload.slug}`));
       } catch (err) {
         return errResp(err);
       }

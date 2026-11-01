@@ -4,6 +4,12 @@ const Confidence = require('confidence');
 const Qs = require('qs');
 const config = require('./config');
 
+const basePath = config.get('/basePath') || '';
+const host = config.get('/host');
+const cookieName = config.get('/auth/session/name');
+// the cookie path is the prefix, or '/' when the app is mounted at the root
+const cookiePath = basePath || '/';
+
 const criteria = {
   env: config.get('/env')
 };
@@ -12,13 +18,19 @@ const viewContextDefault = {
   cssFile: 'main.css',
   hljsCssVer: require('highlight.js/package.json').version,
   scheme: config.get('/scheme'),
-  domain: config.get('/domain')
+  domain: config.get('/domain'),
+  base: basePath
 };
 
 const manifest = {
   $meta: 'jsPerf backend',
   server: {
     port: config.get('/port'),
+    // only bind to a specific interface when HOST is set (e.g. 127.0.0.1 behind nginx)
+    ...(host ? { host } : {}),
+    app: { basePath },
+    // '/next/' must reach the home route mounted at '/next'
+    ...(basePath ? { router: { stripTrailingSlash: true } } : {}),
     routes: {
       security: true
     },
@@ -86,18 +98,22 @@ const manifest = {
           cookieOptions: {
             password: config.get('/auth/session/pass'),
             isSecure: config.get('/auth/session/secure'),
-            isHttpOnly: true
-          }
+            isHttpOnly: true,
+            path: cookiePath
+          },
+          // keeps the flash/state cookie from colliding with another app on the same domain
+          name: cookieName === 'sid-jsperf' ? 'session' : `${cookieName}-yar`,
         }
       },
       {
         plugin: '@hapi/crumb',
         options: {
           cookieOptions: {
-            isSecure: config.get('/auth/session/secure')
+            isSecure: config.get('/auth/session/secure'),
+            path: cookiePath
           },
           // static assets and health checks don't need a CSRF token
-          skip: (request) => request.path.startsWith('/public/') || request.path === '/health'
+          skip: (request) => request.path.startsWith(`${basePath}/public/`) || request.path === `${basePath}/health`
         }
       },
       { plugin: '@hapi/cookie' },
@@ -106,7 +122,8 @@ const manifest = {
         options: {
           session: {
             password: config.get('/auth/session/pass'),
-            cookie: config.get('/auth/session/name'),
+            cookie: cookieName,
+            path: cookiePath,
             isSecure: config.get('/auth/session/secure')
           }
         }
@@ -159,6 +176,16 @@ const manifest = {
     ]
   }
 };
+
+// serve every route under BASE_PATH: plugins that register routes get the prefix
+if (basePath) {
+  const withoutRoutes = ['@hapi/', './server/lib/', './server/repositories/', './server/services/'];
+  for (const entry of manifest.register.plugins) {
+    if (!withoutRoutes.some((p) => entry.plugin.startsWith(p))) {
+      entry.routes = { prefix: basePath };
+    }
+  }
+}
 
 const store = new Confidence.Store(manifest);
 

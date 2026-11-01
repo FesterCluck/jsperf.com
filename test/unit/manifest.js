@@ -57,6 +57,56 @@ lab.experiment('Manifest', () => {
     Code.expect(crumb.options.skip({ path: '/' })).to.be.false();
   });
 
+  lab.experiment('with a base path', () => {
+    const find = (m, name) => m.get('/register/plugins').find((p) => p.plugin === name);
+    const prefixed = () => load({ '/basePath': '/next', '/host': '127.0.0.1', '/auth/session/name': 'sid-next' });
+
+    lab.test('it adds no prefix, host or cookie path changes by default', () => {
+      const m = load();
+      Code.expect(m.get('/server/host')).to.not.exist();
+      Code.expect(m.get('/server/router')).to.not.exist();
+      Code.expect(m.get('/server/app')).to.equal({ basePath: '' });
+      Code.expect(m.get('/register/plugins').filter((p) => p.routes)).to.be.empty();
+      Code.expect(find(m, '@hapi/yar').options.cookieOptions.path).to.equal('/');
+      Code.expect(find(m, '@hapi/yar').options.name).to.equal('session');
+    });
+
+    lab.test('it prefixes route plugins only', () => {
+      const m = prefixed();
+      Code.expect(find(m, './server/web/home').routes).to.equal({ prefix: '/next' });
+      Code.expect(find(m, './server/web/public').routes).to.equal({ prefix: '/next' });
+      Code.expect(find(m, './server/api/json').routes).to.equal({ prefix: '/next' });
+      Code.expect(find(m, '@hapi/inert').routes).to.not.exist();
+      Code.expect(find(m, './server/lib/db').routes).to.not.exist();
+    });
+
+    lab.test('it binds to HOST and scopes cookies', () => {
+      const m = prefixed();
+      Code.expect(m.get('/server/host')).to.equal('127.0.0.1');
+      Code.expect(m.get('/server/app')).to.equal({ basePath: '/next' });
+      Code.expect(m.get('/server/router')).to.equal({ stripTrailingSlash: true });
+      Code.expect(find(m, '@hapi/yar').options.cookieOptions.path).to.equal('/next');
+      Code.expect(find(m, '@hapi/yar').options.name).to.equal('sid-next-yar');
+      Code.expect(find(m, '@hapi/crumb').options.cookieOptions.path).to.equal('/next');
+      const strategies = find(m, './server/web/auth/strategies').options.session;
+      Code.expect(strategies.path).to.equal('/next');
+      Code.expect(strategies.cookie).to.equal('sid-next');
+    });
+
+    lab.test('it skips crumb for prefixed assets and health checks', () => {
+      const { skip } = find(prefixed(), '@hapi/crumb').options;
+      Code.expect(skip({ path: '/next/public/x.css' })).to.be.true();
+      Code.expect(skip({ path: '/next/health' })).to.be.true();
+      Code.expect(skip({ path: '/public/x.css' })).to.be.false();
+      Code.expect(skip({ path: '/next/' })).to.be.false();
+    });
+
+    lab.test('it exposes the base path to views', () => {
+      const ctx = find(prefixed(), '@hapi/vision').options.context;
+      Code.expect(ctx.base).to.equal('/next');
+    });
+  });
+
   lab.test('it enables view debugging in development only', () => {
     const vision = (env) => load({ '/env': env }).get('/register/plugins').find((p) => p.plugin === '@hapi/vision');
 

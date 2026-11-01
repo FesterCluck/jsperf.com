@@ -34,6 +34,12 @@ COOKIE_PASS=password-should-be-32-characters
 # SCHEME=http
 # DOMAIN=localhost
 # PORT=3000
+# bind address, e.g. 127.0.0.1 to only listen locally behind a reverse proxy (default: all interfaces)
+# HOST=127.0.0.1
+# serve the whole app under a URL path prefix, e.g. /next (default: empty = served at the root)
+# BASE_PATH=/next
+# name of the session cookie (default: sid-jsperf); change it if another app shares the domain
+# COOKIE_NAME=sid-jsperf
 # MYSQL_HOST=localhost
 # MYSQL_PORT=3306
 # MYSQL_CONNECTION_LIMIT=10
@@ -43,6 +49,19 @@ COOKIE_PASS=password-should-be-32-characters
 # REDIS_PORT=
 # REDIS_PASSWORD=
 ```
+
+### Running under a path prefix (e.g. behind nginx)
+
+Set `BASE_PATH=/next` and the app mounts every route (pages, `/public` assets, `/health`, feeds, sitemap) under
+that prefix and prefixes all generated links, redirects and feed/sitemap URLs. The session, flash and CSRF
+cookies are scoped to `Path=/next`; set `COOKIE_NAME` to something unique if other apps share the domain.
+nginx must pass the full path through **without stripping** the prefix:
+
+```nginx
+location /next/ { proxy_pass http://127.0.0.1:3199; }   # no URI part on proxy_pass => path is passed unchanged
+```
+
+Run the app with `HOST=127.0.0.1 PORT=3199 BASE_PATH=/next DOMAIN=example.com SCHEME=https`.
 
 ### Start
 

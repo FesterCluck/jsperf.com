@@ -1,6 +1,6 @@
 <h1>Log in</h1>
 {{#if genError}}<p class="error">{{genError}}</p>{{/if}}
-<form action="/login" method="post">
+<form action="{{@root.base}}/login" method="post">
   <input type="hidden" name="crumb" value="{{crumb}}">
   <div>
     <label for="username">Username </label>
@@ -14,4 +14,4 @@
     <input type="submit" class="submit" value="Log in">
   </div>
 </form>
-<p>No account yet? <a href="/register">Register</a>.</p>
+<p>No account yet? <a href="{{@root.base}}/register">Register</a>.</p>

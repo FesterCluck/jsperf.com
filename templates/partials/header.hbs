@@ -7,8 +7,8 @@
     <title>jsPerf: JavaScript performance playground</title>
   {{/if}}
 
-  <link rel="apple-touch-icon" href="/public/apple-touch-icon.png">
-  <link rel="shortcut icon" href="/public/favicon.ico">
+  <link rel="apple-touch-icon" href="{{@root.base}}/public/apple-touch-icon.png">
+  <link rel="shortcut icon" href="{{@root.base}}/public/favicon.ico">
 
   {{#if noIndex}}
     <meta name="robots" content="noindex">
@@ -17,18 +17,18 @@
 
   {{#if home}}
     <meta name="description" content="A performance playground for JavaScript developers. Easily create and share test cases and run cross-browser benchmarks to find out which code snippet is most efficient.">
-    <link rel="stylesheet" href="/public/_vendor/font-awesome/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{{@root.base}}/public/_vendor/font-awesome/css/font-awesome.min.css">
   {{/if}}
 
   {{#if showAtom}}
-    <link href="/{{showAtom.slug}}.atom" rel="alternate" type="application/atom+xml" title="Atom feed for {{#compare showAtom.slug "browse" operator="includes"}}new or updated test cases{{else}}revisions of this test case{{/compare}}">
+    <link href="{{@root.base}}/{{showAtom.slug}}.atom" rel="alternate" type="application/atom+xml" title="Atom feed for {{#compare showAtom.slug "browse" operator="includes"}}new or updated test cases{{else}}revisions of this test case{{/compare}}">
   {{/if}}
 
-  <link rel="stylesheet" href="/public/_css/{{cssFile}}">
-  <link rel="stylesheet" href="/public/_vendor/highlight.js/default.min.css">
+  <link rel="stylesheet" href="{{@root.base}}/public/_css/{{cssFile}}">
+  <link rel="stylesheet" href="{{@root.base}}/public/_vendor/highlight.js/default.min.css">
 
   <!--[if lt IE 9]>
-    <script src="/html5.js"></script>
+    <script src="{{@root.base}}/public/_js/html5.js"></script>
   <![endif]-->
 
   {{#if jsClass}}
@@ -40,11 +40,11 @@
   <article>
   {{#if credentials}}
     <header>
-      <em class="buttons">Logged in as <a href="/browse/{{credentials.username}}">@{{credentials.username}}</a> </em>
-      <form action="/logout" method="post" style="display:inline"><input type="hidden" name="crumb" value="{{crumb}}"><button type="submit">Log out</button></form>
+      <em class="buttons">Logged in as <a href="{{@root.base}}/browse/{{credentials.username}}">@{{credentials.username}}</a> </em>
+      <form action="{{@root.base}}/logout" method="post" style="display:inline"><input type="hidden" name="crumb" value="{{crumb}}"><button type="submit">Log out</button></form>
     </header>
   {{else}}
     <header>
-      <em class="buttons"><a href="/login">Log in</a> · <a href="/register">Register</a></em>
+      <em class="buttons"><a href="{{@root.base}}/login">Log in</a> · <a href="{{@root.base}}/register">Register</a></em>
     </header>
   {{/if}}

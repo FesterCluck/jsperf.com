@@ -2,6 +2,7 @@
 
 const Boom = require('@hapi/boom');
 const Hoek = require('@hapi/hoek');
+const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const schema = require('../../lib/schema');
 
@@ -40,7 +41,7 @@ const register = (server) => {
         benchmark: false,
         mainJS: true,
         showAtom: {
-          slug: request.path.slice(1) // remove slash
+          slug: basePath.slug(request)
         },
         jsClass: true,
         isOwn,
@@ -72,7 +73,7 @@ const register = (server) => {
           benchmark: false,
           mainJS: true,
           showAtom: {
-            slug: request.path.slice(1) // remove slash
+            slug: basePath.slug(request)
           },
           jsClass: true,
           page,
@@ -128,7 +129,7 @@ const register = (server) => {
         const resultingRevision = await pagesService.edit(pageWithTests, update, prevPage.maxRev, prevPage.id);
         const r = resultingRevision > 1 ? `/${resultingRevision}` : '';
 
-        return h.redirect(`/${request.params.testSlug}${r}`);
+        return h.redirect(basePath.url(request, `/${request.params.testSlug}${r}`));
       } catch (err) {
         return errResp(err);
       }
@@ -138,7 +139,7 @@ const register = (server) => {
   server.route({
     method: 'GET',
     path: '/{testSlug}/edit',
-    handler: (request, h) => h.redirect(`/${request.params.testSlug}/1/edit`)
+    handler: (request, h) => h.redirect(basePath.url(request, `/${request.params.testSlug}/1/edit`))
   });
 };
 

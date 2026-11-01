@@ -1,5 +1,7 @@
 'use strict';
 
+const basePath = require('../../lib/basePath');
+
 exports.plugin = {
   name: 'web/faq',
   register: (server) => {
@@ -53,7 +55,7 @@ exports.plugin = {
             }, {
               slug: 'autorun',
               title: 'I don’t like clicking buttons. Can I make the tests run automatically after opening a page?',
-              answer: 'Sure, just append <code>#run</code> to the URL of the test case, e.g. <a href="/document-getelementbyid#run" title="Run document.getElementById() benchmarks"><code>https://jsperf.com/document-getelementbyid#run</code></a>.'
+              answer: `Sure, just append <code>#run</code> to the URL of the test case, e.g. <a href="${basePath.url(request, '/document-getelementbyid')}#run" title="Run document.getElementById() benchmarks"><code>https://jsperf.com/document-getelementbyid#run</code></a>.`
             }, {
               slug: 'setup-teardown',
               title: 'Is it possible to execute code before and after each clocked test loop, outside of the timed code region?',

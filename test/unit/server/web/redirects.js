@@ -25,4 +25,12 @@ lab.experiment('redirects', function () {
     Code.expect(response.statusCode).to.equal(301);
     Code.expect(response.headers.location).to.equal('/document-head');
   });
+
+  lab.test('it keeps redirects under the base path', async function () {
+    const prefixed = await Support.createServer({ views: false, basePath: '/next', plugins: [WebRedirectsPlugin] });
+
+    const response = await prefixed.inject('/next/document-head-speed-test');
+    Code.expect(response.statusCode).to.equal(301);
+    Code.expect(response.headers.location).to.equal('/next/document-head');
+  });
 });

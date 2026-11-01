@@ -1,6 +1,7 @@
 'use strict';
 
 const Crypto = require('node:crypto');
+const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const password = require('../../lib/password');
 const schema = require('../../lib/schema');
@@ -37,7 +38,7 @@ exports.plugin = {
       options: { auth: tryAuth },
       handler: (request, h) => {
         if (request.auth.isAuthenticated) {
-          return h.redirect('/');
+          return h.redirect(basePath.url(request, '/'));
         }
 
         return h.view('auth/login', { headTitle: 'Log in' });
@@ -63,7 +64,7 @@ exports.plugin = {
         }
 
         startSession(request, user);
-        return h.redirect('/');
+        return h.redirect(basePath.url(request, '/'));
       }
     });
 
@@ -73,7 +74,7 @@ exports.plugin = {
       options: { auth: tryAuth },
       handler: (request, h) => {
         if (request.auth.isAuthenticated) {
-          return h.redirect('/');
+          return h.redirect(basePath.url(request, '/'));
         }
 
         return h.view('auth/register', { headTitle: 'Register' });
@@ -128,7 +129,7 @@ exports.plugin = {
         }
 
         startSession(request, { id, username: value.username });
-        return h.redirect('/');
+        return h.redirect(basePath.url(request, '/'));
       }
     });
 
@@ -140,7 +141,7 @@ exports.plugin = {
       handler: (request, h) => {
         request.cookieAuth.clear();
         request.yar.reset();
-        return h.redirect('/');
+        return h.redirect(basePath.url(request, '/'));
       }
     });
 
