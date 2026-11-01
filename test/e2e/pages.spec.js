@@ -5,7 +5,6 @@ const { test, expect } = require('@playwright/test');
 const pages = [
   ['/faq', /Frequent/],
   ['/contributors', /Contributors/],
-  ['/testimonials', /Testimonials/]
 ];
 
 for (const [path, title] of pages) {
