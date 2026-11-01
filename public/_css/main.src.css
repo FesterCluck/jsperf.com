@@ -4,11 +4,11 @@ html, body, h1, h2, h3, fieldset, #faq, #faq dt, #faq dd {
 	border: 0;
 }
 
-table, p, ul, h1, h2, h3, #error-info, form div, #faq, .bs-rt {
+table, p, ul, h1, h2, h3, #error-info, form div, #faq {
 	margin-bottom: 1em;
 }
 
-button, input, textarea, a, .bs-rt {
+button, input, textarea, a {
 	-moz-border-radius: 4px;
 	-webkit-border-radius: 4px;
 	border-radius: 4px;
@@ -363,63 +363,9 @@ footer h4 {
 	margin-right: .3em;
 }
 
-#bs-chart {
-	overflow: auto;
-}
-
-#bs-chart-frame {
-	height: 240px;
-	width: 100%;
-}
-
-#bs-logo {
-	margin: 0;
-}
-
-#bs-logo span, applet {
+applet {
 	position: absolute;
 	left: -9999em;
-}
-
-#bs-logo a {
-	display: block;
-	width: 232px;
-	height: 39px;
-	filter: none;
-	background: url(//www.browserscope.org/static/img/logo.png) 0 0 no-repeat;
-}
-
-#bs-ua {
-	padding: .5em .5em 0;
-	color: #555;
-}
-
-#bs-results .bs-rt {
-	font-size: 10pt;
-	padding: .5em;
-	background: #ddd;
-}
-
-#bs-results td {
-	border: 1px solid #ddd;
-	padding: .4em;
-	white-space: nowrap;
-}
-
-#bs-results .rt-ua-cur {
-	font-style: italic;
-	font-weight: bold;
-}
-
-#bs-results .bs-rt-message {
-	padding: 3em;
-	text-align: center;
-	font-weight: bold;
-	color: #555;
-}
-
-#bs-results .google-visualization-table-tr-head td {
-	white-space: normal;
 }
 
 #controls {
@@ -428,18 +374,6 @@ footer h4 {
 
 #comments h1 {
 	padding: 0;
-}
-
-#comments .meta img {
-	position: absolute;
-	left: 0;
-	top: 0;
-	margin: 0;
-}
-
-#comments .meta img {
-	top: 2px;
-	left: 2px;
 }
 
 #comments .meta {
@@ -583,16 +517,6 @@ footer h4 {
 
 .me1 {
 	color: #606;
-}
-
-#carbonads {
-	float: right;
-	width: 130px;
-	font-size: 80%;
-}
-
-#carbonads a {
-	display: block;
 }
 
 /* < 1051px */

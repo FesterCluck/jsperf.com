@@ -18,11 +18,6 @@
   "env": {
     "SCHEME": "https",
     "DOMAIN": "jsperf.com",
-    "GITHUB_CLIENT_ID": "@jsperf-github-id",
-    "GITHUB_CLIENT_SECRET": "@jsperf-github-secret",
-    "GITHUB_CALLBACK": "https://jsperf.com",
-    "BROWSERSCOPE": "@jsperf-browserscope",
-    "BELL_COOKIE_PASS": "@jsperf-bell-pass",
     "COOKIE_PASS": "@jsperf-cookie-pass",
     "MYSQL_USER": "@jsperf-db-user",
     "MYSQL_PASSWORD": "@jsperf-db-pass",

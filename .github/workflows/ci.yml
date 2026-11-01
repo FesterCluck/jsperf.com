@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: rootpass
+          MYSQL_DATABASE: jsperf
+          MYSQL_USER: jsuser
+          MYSQL_PASSWORD: jspass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -prootpass"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: jsuser
+      MYSQL_PASSWORD: jspass
+      MYSQL_DATABASE: jsperf
+      COOKIE_PASS: ci-cookie-password-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Run database migrations
+        run: node -e "const s = require('@hapi/hapi').server(); s.register({ plugin: require('./server/lib/db'), options: { host: process.env.MYSQL_HOST, port: Number(process.env.MYSQL_PORT), user: process.env.MYSQL_USER, pass: process.env.MYSQL_PASSWORD, db: process.env.MYSQL_DATABASE } }).then(() => s.stop()).catch((e) => { console.error(e); process.exit(1); })"

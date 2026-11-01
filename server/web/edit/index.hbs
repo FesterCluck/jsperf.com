@@ -9,6 +9,7 @@ This edit will create a new revision.
 </p>
 {{error page.genError tag="p"}}
 <form method="post">
+  <input type="hidden" name="crumb" value="{{crumb}}">
   <fieldset>
     <h3>Your details (optional)</h3>
     <div>
@@ -34,7 +35,7 @@ This edit will create a new revision.
           {{else}}
             value="{{credentials.email}}"
           {{/if}}
-        > (won’t be displayed; might be used for Gravatar)
+        > (won’t be displayed)
       </label>
     </div>
     <div>
@@ -45,11 +46,7 @@ This edit will create a new revision.
       {{else if isOwn}}
         value="{{page.authorURL}}"
       {{else}}
-        {{#if credentials.raw.blog}}
-          value="{{credentials.raw.blog}}"
-        {{else}}
-          value="{{credentials.raw.html_url}}"
-        {{/if}}
+        value=""
       {{/if}}
       >
     </div>
@@ -161,5 +158,5 @@ This edit will create a new revision.
   </fieldset>
 </form>
 {{else}}
-   <a class="login" href="/auth/github"><i class="fa fa-github"></i> Login with GitHub to Edit Test Cases</a>
+   <a class="login" href="/login">Log in to Edit Test Cases</a> or <a href="/register">register</a>
 {{/if}}

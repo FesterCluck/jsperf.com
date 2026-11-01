@@ -1,16 +1,20 @@
-# jsperf.com [![Build Status](https://travis-ci.org/jsperf/jsperf.com.svg?branch=master)](https://travis-ci.org/jsperf/jsperf.com) [![Test Coverage](https://codeclimate.com/github/jsperf/jsperf.com/badges/coverage.svg)](https://codeclimate.com/github/jsperf/jsperf.com) [![Code Climate](https://codeclimate.com/github/jsperf/jsperf.com/badges/gpa.svg)](https://codeclimate.com/github/jsperf/jsperf.com) [![Reviewed by Hound](https://img.shields.io/badge/Reviewed_by-Hound-8E64B0.svg)](https://houndci.com)
+# jsperf.com [![CI](https://github.com/jsperf/jsperf.com/actions/workflows/ci.yml/badge.svg)](https://github.com/jsperf/jsperf.com/actions/workflows/ci.yml)
 
 ## How to run a local copy of jsPerf
 
 ### Prerequisites
 
-1. [Node.js](https://nodejs.org/en/) (see preferred version in [`.nvmrc`](https://github.com/jsperf/jsperf.com/blob/master/.nvmrc))
-2. [MySQL](https://dev.mysql.com/downloads/mysql/)
+1. [Node.js](https://nodejs.org/en/) (Node.js 22 or newer; see preferred version in [`.nvmrc`](https://github.com/jsperf/jsperf.com/blob/master/.nvmrc))
+2. [MySQL](https://dev.mysql.com/downloads/mysql/) 8.0 or newer (8.x and 9.x are supported; the default `caching_sha2_password` authentication works)
   1. Install
     1. macOS: `brew install mysql`
-  2. Initialize: `mysql -uroot -e "CREATE DATABASE jsperf; GRANT ALL ON jsperf.* TO 'jsuser'@'localhost' IDENTIFIED BY 'jspass'; FLUSH PRIVILEGES;"`
-3. Get a [Browserscope.org](https://www.browserscope.org/) API key by signing in and going to [the settings page](https://www.browserscope.org/user/settings).
-4. Register a [new OAuth GitHub application](https://github.com/settings/applications/new). Leave the callback URL blank. Copy the "Client ID" and "Client Secret".
+    2. Debian/Ubuntu: `sudo apt install mysql-server`
+    3. Docker: `docker run -d -p 3306:3306 -e MYSQL_ALLOW_EMPTY_PASSWORD=yes mysql:8`
+  2. Initialize (database, user and grants are separate statements in MySQL 8+):
+     ```
+     mysql -uroot -e "CREATE DATABASE jsperf CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER 'jsuser'@'%' IDENTIFIED BY 'jspass'; GRANT ALL ON jsperf.* TO 'jsuser'@'%';"
+     ```
+  3. Tables are created automatically by migrations when the server starts.
 
 ### Setup
 
@@ -23,14 +27,7 @@ NODE_ENV=development
 MYSQL_USER=jsuser
 MYSQL_PASSWORD=jspass
 MYSQL_DATABASE=jsperf
-# from Prerequisites step 3
-BROWSERSCOPE=
-# from Prerequisites step 4
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GITHUB_CALLBACK=http://localhost:3000
 
-BELL_COOKIE_PASS=password-should-be-32-characters
 COOKIE_PASS=password-should-be-32-characters
 
 # customizable but not recommended for local development
@@ -39,6 +36,7 @@ COOKIE_PASS=password-should-be-32-characters
 # PORT=3000
 # MYSQL_HOST=localhost
 # MYSQL_PORT=3306
+# MYSQL_CONNECTION_LIMIT=10
 # LOGGLY_TOKEN=
 # LOGGLY_SUBDOMAIN=
 # REDIS_HOST=
@@ -57,7 +55,3 @@ npm start
 ```
 
 Hopefully everything smoothly started up and you're ready to start [contributing](CONTRIBUTING.md). If not, check out the [wiki](https://github.com/jsperf/jsperf.com/wiki/Local-Development-Debugging) for debugging tips.
-
-## Sponsorship
-
-Development of [jsperf.com](https://jsperf.com) is generously supported by contributions from individuals and corporations. If you are benefiting from jsPerf and would like to help keep the project financially sustainable, please visit [https://jsperf.com/sponsor](https://jsperf.com/sponsor).

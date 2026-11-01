@@ -1,17 +1,14 @@
-exports.register = function (server, options, next) {
-  server.route({
-    method: 'GET',
-    path: '/testimonials',
-    handler: function (request, reply) {
-      reply.view('testimonials/index', {
+'use strict';
+
+exports.plugin = {
+  name: 'web/testimonials',
+  register: (server) => {
+    server.route({
+      method: 'GET',
+      path: '/testimonials',
+      handler: (request, h) => h.view('testimonials/index', {
         headTitle: 'Testimonials'
-      });
-    }
-  });
-
-  return next();
-};
-
-exports.register.attributes = {
-  name: 'web/testimonials'
+      })
+    });
+  }
 };

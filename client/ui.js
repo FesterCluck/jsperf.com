@@ -7,28 +7,28 @@
  */
 (function (window, document) {
   /** Cache of error messages */
-  var errors = [];
+  const errors = [];
 
   /** Cache of event handlers */
-  var handlers = {};
+  const handlers = {};
 
   /** A flag to indicate that the page has loaded */
-  var pageLoaded = false;
+  let pageLoaded = false;
 
   /** Benchmark results element id prefix (e.g. `results-1`) */
-  var prefix = 'results-';
+  const prefix = 'results-';
 
   /** The element responsible for scrolling the page (assumes ui.js is just before </body>) */
-  var scrollEl = document.body;
+  let scrollEl = document.body;
 
   /** Used to resolve a value's internal [[Class]] */
-  var toString = {}.toString;
+  const toString = {}.toString;
 
   /** Namespace */
-  var ui = new Benchmark.Suite();
+  const ui = new Benchmark.Suite();
 
   /** Object containing various CSS class names */
-  var classNames = {
+  const classNames = {
     // used for error styles
     'error': 'error',
     // used to make content visible
@@ -38,7 +38,7 @@
   };
 
   /** Used to flag environments/features */
-  var has = {
+  const has = {
     // used for pre-populating form fields
     'localStorage': !!(function () {
       try {
@@ -50,7 +50,7 @@
   };
 
   /** Object containing various text messages */
-  var texts = {
+  const texts = {
     // inner text for the various run button states
     'run': {
       'again': 'Run again',
@@ -65,15 +65,15 @@
   };
 
   /** The options object for Benchmark.Suite#run */
-  var runOptions = {
+  const runOptions = {
     'async': true,
     'queued': true
   };
 
   /** API shortcuts */
-  var filter = Benchmark.filter;
-  var formatNumber = Benchmark.formatNumber;
-  var join = Benchmark.join;
+  const filter = Benchmark.filter;
+  const formatNumber = Benchmark.formatNumber;
+  const join = Benchmark.join;
 
   /* ------------------------------------------------------------------------ */
 
@@ -84,13 +84,13 @@
      *
      * @private
      */
-    'cycle': function () {
-      var bench = this;
-      var size = bench.stats.sample.length;
+    'cycle' () {
+      const bench = this;
+      const size = bench.stats.sample.length;
 
       if (!bench.aborted) {
-        setStatus(bench.name + ' &times; ' + formatNumber(bench.count) + ' (' +
-          size + ' sample' + (size === 1 ? '' : 's') + ')');
+        setStatus(`${bench.name  } &times; ${  formatNumber(bench.count)  } (${ 
+          size  } sample${  size === 1 ? '' : 's'  })`);
       }
     },
 
@@ -99,7 +99,7 @@
      *
      * @private
      */
-    'start': function () {
+    'start' () {
       // call user provided init() function
       if (isFunction(window.init)) {
         init(); // eslint-disable-line no-undef
@@ -114,14 +114,14 @@
      *
      * @private
      */
-    'run': function () {
-      var stopped = !ui.running;
+    'run' () {
+      const stopped = !ui.running;
       ui.abort();
       ui.length = 0;
 
       if (stopped) {
         logError({ 'clear': true });
-        ui.push.apply(ui, _.filter(ui.benchmarks, function (bench) {
+        ui.push.apply(ui, _.filter(ui.benchmarks, (bench) => {
           return !bench.error && bench.reset();
         }));
         ui.run(runOptions);
@@ -137,12 +137,12 @@
      * @private
      * @param {Object} event The event object.
      */
-    'click': function (event) {
+    'click' (event) {
       event || (event = window.event);
 
-      var id;
-      var index;
-      var target = event.target || event.srcElement;
+      let id;
+      let index;
+      let target = event.target || event.srcElement;
 
       while (target && !(id = target.id)) {
         target = target.parentNode;
@@ -158,7 +158,7 @@
      * @private
      * @param {Object} event The event object.
      */
-    'keyup': function (event) {
+    'keyup' (event) {
       if ((event || window.event).keyCode === 13) {
         handlers.title.click(event);
       }
@@ -172,23 +172,13 @@
      *
      * @private
      */
-    'hashchange': function () {
+    'hashchange' () {
       ui.parseHash();
 
-      var scrollTop;
-      var params = ui.params;
-      var chart = params.chart;
-      var filterBy = params.filterby;
+      let scrollTop;
+      const params = ui.params;
 
       if (pageLoaded) {
-        // configure browserscope
-        ui.browserscope.postable = has.runner && !('nopost' in params);
-
-        // configure chart renderer
-        if (chart || filterBy) {
-          scrollTop = $('results').offsetTop;
-          ui.browserscope.render({ 'chart': chart, 'filterBy': filterBy });
-        }
         if (has.runner) {
           // call user provided init() function
           if (isFunction(window.init)) {
@@ -212,7 +202,7 @@
      *
      * @private
      */
-    'load': function () {
+    'load' () {
       // only for test pages
       if (has.runner) {
         // init the ui
@@ -234,7 +224,7 @@
       ui.length = 0;
 
       // evaluate hash values after all other "load" events have fired
-      _.defer(function () {
+      _.defer(() => {
         pageLoaded = true;
         handlers.window.hashchange();
       });
@@ -283,7 +273,7 @@
       if (typeof element.addEventListener !== 'undefined') {
         element.addEventListener(eventName, handler, false);
       } else if (typeof element.attachEvent !== 'undefined') {
-        element.attachEvent('on' + eventName, handler);
+        element.attachEvent(`on${  eventName}`, handler);
       }
     }
     return element;
@@ -325,7 +315,7 @@
    */
   function hasClass (element, className) {
     return !!(element = $(element)) &&
-      (' ' + element.className + ' ').indexOf(' ' + className + ' ') > -1;
+      (` ${  element.className  } `).indexOf(` ${  className  } `) > -1;
   }
 
   /**
@@ -375,9 +365,9 @@
    * @param {string|Object} text The text to append or options object.
    */
   function logError (text) {
-    var table;
-    var div = $('error-info');
-    var options = {};
+    let table;
+    let div = $('error-info');
+    let options = {};
 
     // juggle arguments
     if (typeof text === 'object' && text) {
@@ -423,17 +413,17 @@
    * @returns {Object} The suite instance.
    */
   function parseHash () {
-    var me = this;
-    var hashes = window.location.hash.slice(1).split('&');
-    var params = me.params || (me.params = {});
+    const me = this;
+    const hashes = window.location.hash.slice(1).split('&');
+    const params = me.params || (me.params = {});
 
     // remove old params
-    _.forOwn(params, function (value, key) {
+    _.forOwn(params, (value, key) => {
       delete params[key];
     });
 
     // add new params
-    _.each(hashes[0] && hashes, function (value) {
+    _.each(hashes[0] && hashes, (value) => {
       value = value.split('=');
       params[value[0].toLowerCase()] = (value[1] || '').toLowerCase();
     });
@@ -449,11 +439,11 @@
    * @returns {Object} The suite instance.
    */
   function render (index) {
-    _.each(index == null ? (index = 0, ui.benchmarks) : [ui.benchmarks[index]], function (bench) {
-      var parsed;
-      var cell = $(prefix + (++index));
-      var error = bench.error;
-      var hz = bench.hz;
+    _.each(index == null ? (index = 0, ui.benchmarks) : [ui.benchmarks[index]], (bench) => {
+      let parsed;
+      const cell = $(prefix + (++index));
+      const error = bench.error;
+      const hz = bench.hz;
 
       // reset title and class
       cell.title = '';
@@ -464,7 +454,7 @@
         setHTML(cell, 'Error');
         addClass(cell, classNames.error);
         parsed = join(error, '</li><li>');
-        logError('<p>' + error + '.</p>' + (parsed ? '<ul><li>' + parsed + '</li></ul>' : ''));
+        logError(`<p>${  error  }.</p>${  parsed ? `<ul><li>${  parsed  }</li></ul>` : ''}`);
       } else {
         // status: running
         if (bench.running) {
@@ -474,10 +464,10 @@
           if (ui.running) {
             setHTML(cell, 'completed');
           } else {
-            cell.title = 'Ran ' + formatNumber(bench.count) + ' times in ' +
-              bench.times.cycle.toFixed(3) + ' seconds.';
-            setHTML(cell, formatNumber(hz.toFixed(hz < 100 ? 2 : 0)) +
-              ' <small>&plusmn;' + bench.stats.rme.toFixed(2) + '%</small>');
+            cell.title = `Ran ${  formatNumber(bench.count)  } times in ${ 
+              bench.times.cycle.toFixed(3)  } seconds.`;
+            setHTML(cell, `${formatNumber(hz.toFixed(hz < 100 ? 2 : 0)) 
+              } <small>&plusmn;${  bench.stats.rme.toFixed(2)  }%</small>`);
           }
         } else {
           // status: pending
@@ -494,11 +484,11 @@
 
   /* ------------------------------------------------------------------------ */
 
-  ui.on('add', function (event) {
-    var bench = event.target;
-    var index = ui.benchmarks.length;
-    var id = index + 1;
-    var title = $('title-' + id);
+  ui.on('add', (event) => {
+    const bench = event.target;
+    const index = ui.benchmarks.length;
+    const id = index + 1;
+    const title = $(`title-${  id}`);
 
     ui.benchmarks.push(bench);
 
@@ -514,34 +504,34 @@
       ui.render(index);
     }
   })
-    .on('start cycle', function () {
+    .on('start cycle', () => {
       ui.render();
       setHTML('run', texts.run.running);
     })
-    .on('complete', function () {
-      var benches = filter(ui.benchmarks, 'successful');
-      var fastest = filter(benches, 'fastest');
-      var slowest = filter(benches, 'slowest');
+    .on('complete', () => {
+      const benches = filter(ui.benchmarks, 'successful');
+      const fastest = filter(benches, 'fastest');
+      const slowest = filter(benches, 'slowest');
 
       ui.render();
       setHTML('run', texts.run.again);
       setStatus(texts.status.again);
 
       // highlight result cells
-      _.each(benches, function (bench) {
-        var cell = $(prefix + (_.indexOf(ui.benchmarks, bench) + 1));
-        var fastestHz = getHz(fastest[0]);
-        var hz = getHz(bench);
-        var percent = (1 - (hz / fastestHz)) * 100;
-        var span = cell.getElementsByTagName('span')[0];
-        var text = 'fastest';
+      _.each(benches, (bench) => {
+        const cell = $(prefix + (_.indexOf(ui.benchmarks, bench) + 1));
+        const fastestHz = getHz(fastest[0]);
+        const hz = getHz(bench);
+        const percent = (1 - (hz / fastestHz)) * 100;
+        const span = cell.getElementsByTagName('span')[0];
+        let text = 'fastest';
 
         if (_.indexOf(fastest, bench) > -1) {
         // mark fastest
           addClass(cell, text);
         } else {
           text = isFinite(hz)
-            ? formatNumber(percent < 1 ? percent.toFixed(2) : Math.round(percent)) + '% slower'
+            ? `${formatNumber(percent < 1 ? percent.toFixed(2) : Math.round(percent))  }% slower`
             : '';
 
           // mark slowest
@@ -553,11 +543,9 @@
         if (span) {
           setHTML(span, text);
         } else {
-          appendHTML(cell, '<span>' + text + '</span>');
+          appendHTML(cell, `<span>${  text  }</span>`);
         }
       });
-
-      ui.browserscope.post();
     });
 
   /* ------------------------------------------------------------------------ */
@@ -601,54 +589,18 @@
   // parse location hash string
   ui.parseHash();
 
-  // provide a simple UI for toggling between chart types and filtering results
-  // (assumes ui.js is just before </body>)
-  (function () {
-    var sibling = $('bs-results');
-    var p = createElement('p');
-
-    p.innerHTML =
-      '<span id=charts><strong>Chart type:</strong> <a href=#>bar</a>, ' +
-      '<a href=#>column</a>, <a href=#>line</a>, <a href=#>pie</a>, ' +
-      '<a href=#>table</a></span><br>' +
-      '<span id=filters><strong>Filter:</strong> <a href=#>popular</a>, ' +
-      '<a href=#>all</a>, <a href=#>desktop</a>, <a href=#>family</a>, ' +
-      '<a href=#>major</a>, <a href=#>minor</a>, <a href=#>mobile</a>, ' +
-      '<a href=#>prerelease</a></span>';
-
-    sibling.parentNode.insertBefore(p, sibling);
-
-    // use DOM0 event handler to simplify canceling the default action
-    $('charts').onclick =
-    $('filters').onclick = function (event) {
-      event || (event = window.event);
-      var target = event.target || event.srcElement;
-      if (target.href || (target = target.parentNode).href) {
-        ui.browserscope.render(
-          target.parentNode.id === 'charts'
-            ? { 'chart': target.innerHTML }
-            : { 'filterBy': target.innerHTML }
-        );
-      }
-      // cancel the default action
-      return false;
-    };
-  }());
-
-  /* ------------------------------------------------------------------------ */
-
   // fork for runner or embedded chart
   if (has.runner) {
     // detect the scroll element
     (function () {
-      var scrollTop;
-      var div = document.createElement('div');
-      var body = document.body;
-      var bodyStyle = body.style;
-      var bodyHeight = bodyStyle.height;
-      var html = document.documentElement;
-      var htmlStyle = html.style;
-      var htmlHeight = htmlStyle.height;
+      let scrollTop;
+      const div = document.createElement('div');
+      const body = document.body;
+      const bodyStyle = body.style;
+      const bodyHeight = bodyStyle.height;
+      const html = document.documentElement;
+      const htmlStyle = html.style;
+      const htmlHeight = htmlStyle.height;
 
       bodyStyle.height = htmlStyle.height = 'auto';
       div.style.cssText = 'display:block;height:9001px;';
@@ -667,20 +619,19 @@
 
     // catch and display errors from the "preparation code"
     window.onerror = function (message, fileName, lineNumber) {
-      logError('<p>' + message + '.</p><ul><li>' + join({
-        'message': message,
-        'fileName': fileName,
-        'lineNumber': lineNumber
-      }, '</li><li>') + '</li></ul>');
+      logError(`<p>${  message  }.</p><ul><li>${  join({
+        message,
+        fileName,
+        lineNumber
+      }, '</li><li>')  }</li></ul>`);
       scrollEl.scrollTop = $('error-info').offsetTop;
     };
   } else {
     // short circuit unusable methods
     ui.render = function () {};
     ui.off('start cycle complete');
-    setTimeout(function () {
+    setTimeout(() => {
       ui.off();
-      ui.browserscope.post = function () {};
       _.invokeMap(ui.benchmarks, 'off');
     }, 1);
   }

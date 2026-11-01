@@ -2,7 +2,6 @@
   <strong><em title="JavaScript">js</em>Perf</strong> — JavaScript performance playground
 </h1>
 
-{{> advertisement}}
 
 <h2>What is jsPerf?</h2>
 
@@ -14,6 +13,7 @@
 {{error genError tag="p"}}
 
 <form action="/" method="post">
+  <input type="hidden" name="crumb" value="{{crumb}}">
   <fieldset>
 
     <h3>Your details (optional)</h3>
@@ -34,18 +34,14 @@
         {{else}}
           value="{{credentials.email}}"
         {{/if}}
-      > (won’t be displayed; might be used for Gravatar)</label>
+      > (won’t be displayed)</label>
     </div>
     <div>
       <label for="authorURL">URL </label><input type="url" name="authorURL" id="authorURL"
         {{#if authorURL}}
           value="{{authorURL}}"
         {{else}}
-          {{#if credentials.raw.blog}}
-            value="{{credentials.raw.blog}}"
-          {{else}}
-            value="{{credentials.raw.html_url}}"
-          {{/if}}
+          value=""
         {{/if}}
       >
     </div>
@@ -128,5 +124,5 @@
   </fieldset>
 </form>
 {{else}}
-   <a class="login" href="/auth/github"><i class="fa fa-github"></i> Login with GitHub to Create Test Cases</a>
+   <a class="login" href="/login">Log in to Create Test Cases</a> or <a href="/register">register</a>
 {{/if}}

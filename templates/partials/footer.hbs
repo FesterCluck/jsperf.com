@@ -3,13 +3,6 @@
   <footer>
     <ul>
       <li>
-        <h4>Sponsors</h4>
-        <p>Hosting generously provided by <a href="https://m.do.co/c/b426e15331e8">DigitalOcean</a> and <a href="https://zeit.co/">Zeit</a></p>
-
-        <p><a href="/sponsor">Learn how to become a sponsor</a></p>
-      </li>
-
-      <li>
         <h4>Tests</h4>
         <ul>
           <li>
@@ -53,9 +46,6 @@
         <h4>Contact</h4>
         <ul>
           <li>
-            <a href="https://twitter.com/jsperf">Twitter</a>
-          </li>
-          <li>
             <a href="https://github.com/jsperf/jsperf.com">GitHub</a>
           </li>
           <li>
@@ -69,10 +59,6 @@
   {{#if benchmark}}
     <script src="/public/_js/test.js"></script>
     <script>
-      {{#if page.browserscopeID}}
-        ui.browserscope.key = '{{ page.browserscopeID }}'
-      {{/if}}
-
       {{#each page.test}}
         ui.add(
           {{{ cleanJsString title }}},
@@ -94,7 +80,7 @@
     {{{ page.initHTML }}}
   {{else}}
     {{#if mainJS}}
-      <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.2/jquery.js"></script>
+      <script src="/public/_vendor/jquery/jquery.min.js"></script>
 
       {{#if debug}}
         <script src="/public/_js/main.src.js"></script>
@@ -103,9 +89,4 @@
       {{/if}}
     {{/if}}
   {{/if}}
-
-  <script>
-    window._gaq=[['_setAccount','UA-6065217-40'],['_trackPageview']];
-    (function(d,t){var g=d.createElement(t),s=d.getElementsByTagName(t)[0];g.src='https://ssl.google-analytics.com/ga.js';s.parentNode.insertBefore(g,s)}(document,'script'))
-  </script>
 </body>

@@ -17,7 +17,7 @@
 
   {{#if home}}
     <meta name="description" content="A performance playground for JavaScript developers. Easily create and share test cases and run cross-browser benchmarks to find out which code snippet is most efficient.">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="/public/_vendor/font-awesome/css/font-awesome.min.css">
   {{/if}}
 
   {{#if showAtom}}
@@ -25,7 +25,7 @@
   {{/if}}
 
   <link rel="stylesheet" href="/public/_css/{{cssFile}}">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/{{hljsCssVer}}/styles/default.min.css">
+  <link rel="stylesheet" href="/public/_vendor/highlight.js/default.min.css">
 
   <!--[if lt IE 9]>
     <script src="/html5.js"></script>
@@ -40,6 +40,11 @@
   <article>
   {{#if credentials}}
     <header>
-      <em class="buttons">Logged in as <a href={{credentials.raw.html_url}}>@{{credentials.username}}</a></em>
+      <em class="buttons">Logged in as <a href="/browse/{{credentials.username}}">@{{credentials.username}}</a> </em>
+      <form action="/logout" method="post" style="display:inline"><input type="hidden" name="crumb" value="{{crumb}}"><button type="submit">Log out</button></form>
+    </header>
+  {{else}}
+    <header>
+      <em class="buttons"><a href="/login">Log in</a> · <a href="/register">Register</a></em>
     </header>
   {{/if}}

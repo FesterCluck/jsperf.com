@@ -1,26 +1,20 @@
-var Lab = require('lab');
-var Code = require('code');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
 
-var pluralize = require('../../../../templates/helpers/pluralize');
+const pluralize = require('../../../../templates/helpers/pluralize');
 
-var lab = exports.lab = Lab.script();
+const lab = exports.lab = Lab.script();
 
 lab.experiment('Template Helper pluralize', function () {
-  lab.test('pluralizes term when num is zero', function (done) {
+  lab.test('pluralizes term when num is zero', async function () {
     Code.expect(pluralize(0, 'thing')).to.equal('0 things');
-
-    done();
   });
 
-  lab.test('keep term when num is one', function (done) {
+  lab.test('keep term when num is one', async function () {
     Code.expect(pluralize(1, 'thing')).to.equal('1 thing');
-
-    done();
   });
 
-  lab.test('pluralizes term when num is greater than one', function (done) {
+  lab.test('pluralizes term when num is greater than one', async function () {
     Code.expect(pluralize(2, 'thing')).to.equal('2 things');
-
-    done();
   });
 });

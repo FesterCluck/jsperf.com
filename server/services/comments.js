@@ -1,8 +1,10 @@
+'use strict';
+
 const name = 'services/comments';
-exports.register = function (server, options, next) {
+const register = (server, options) => {
   const commentsRepo = server.plugins['repositories/comments'];
 
-  server.expose('create', function (pageID, ip, payload) {
+  server.expose('create', async function (pageID, ip, payload) {
     server.log(['debug'], `${name}::create: ${JSON.stringify(arguments)}`);
 
     const comment = {
@@ -16,8 +18,8 @@ exports.register = function (server, options, next) {
       published: new Date()
     };
 
-    return commentsRepo.create(comment)
-      .then(id => Object.assign(comment, {id}));
+    const id = await commentsRepo.create(comment);
+    return Object.assign(comment, { id });
   });
 
   server.expose('delete', function (commentId) {
@@ -25,11 +27,10 @@ exports.register = function (server, options, next) {
 
     return commentsRepo.delete(commentId);
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name,
-  dependencies: ['repositories/comments']
+  dependencies: ['repositories/comments'],
+  register
 };

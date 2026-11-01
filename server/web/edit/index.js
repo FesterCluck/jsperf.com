@@ -1,71 +1,73 @@
-const Boom = require('boom');
+'use strict';
+
+const Boom = require('@hapi/boom');
+const Hoek = require('@hapi/hoek');
 const defaults = require('../../lib/defaults');
 const schema = require('../../lib/schema');
-const Hoek = require('hoek');
-const Joi = require('joi');
 
-exports.register = function (server, options, next) {
+const register = (server) => {
   const pagesService = server.plugins['services/pages'];
 
   server.route({
     method: 'GET',
-    config: {
+    options: {
       auth: {
         mode: 'try',
         strategy: 'session'
       }
     },
     path: '/{testSlug}/{rev}/edit',
-    handler: function (request, reply) {
-      pagesService.getBySlug(request.params.testSlug, request.params.rev)
-        .then(function (values) {
-          let page = values[0];
-          page.test = values[1];
-          page.revision = values[2];
-          const own = request.yar.get('own') || {};
-          const isOwn = own[page.id];
-          const isAdmin = request.yar.get('admin');
+    handler: async (request, h) => {
+      let values;
+      try {
+        values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
+      } catch (err) {
+        if (err.message === 'Not found') {
+          throw Boom.notFound('The page was not found');
+        }
+        throw err;
+      }
 
-          reply.view('edit/index', {
-            headTitle: page.title,
-            benchmark: false,
-            mainJS: true,
-            showAtom: {
-              slug: request.path.slice(1) // remove slash
-            },
-            jsClass: true,
-            isOwn: isOwn,
-            isAdmin: isAdmin,
-            page: page,
-            mediumTextLength: defaults.mediumTextLength
-          });
-        })
-        .catch(function (err) {
-          if (err.message === 'Not found') {
-            reply(Boom.notFound('The page was not found'));
-          } else {
-            reply(err);
-          }
-        });
+      const page = values[0];
+      page.test = values[1];
+      page.revision = values[2];
+      const own = request.yar.get('own') || {};
+      const isOwn = own[page.id];
+      const isAdmin = request.yar.get('admin');
+
+      return h.view('edit/index', {
+        headTitle: page.title,
+        benchmark: false,
+        mainJS: true,
+        showAtom: {
+          slug: request.path.slice(1) // remove slash
+        },
+        jsClass: true,
+        isOwn,
+        isAdmin,
+        page,
+        mediumTextLength: defaults.mediumTextLength
+      });
     }
   });
 
   server.route({
     method: 'POST',
     path: '/{testSlug}/{rev}/edit',
-    config: {
+    options: {
       auth: {
         strategy: 'session'
       }
     },
-    handler: function (request, reply) {
-      const errResp = function (errObj) {
+    handler: async (request, h) => {
+      const errResp = (errObj) => {
         if (errObj.message) {
           errObj.genError = errObj.message;
         }
-        let page = Hoek.applyToDefaults(defaults.testPageContext, request.payload, true);
+
+        const page = Hoek.applyToDefaults(defaults.testPageContext, request.payload, { nullOverride: true });
         Hoek.merge(page, errObj);
-        reply.view('edit/index', {
+        return h.view('edit/index', {
           headTitle: page.title,
           benchmark: false,
           mainJS: true,
@@ -73,84 +75,75 @@ exports.register = function (server, options, next) {
             slug: request.path.slice(1) // remove slash
           },
           jsClass: true,
-          page: page,
+          page,
           mediumTextLength: defaults.mediumTextLength
         }).code(400);
       };
 
       request.payload.authorGitHub = request.auth.credentials.username;
 
-      Joi.validate(request.payload, schema.testPage, function (err, pageWithTests) {
-        let errObj = {};
-        if (err) {
-          server.log(['error'], err);
-          try {
-            if (err.details[0].path[0] === 'title') {
-              errObj.titleError = defaults.errors.title;
-            } else {
-              throw err;
-            }
-          } catch (ex) {
-            server.log(['error'], ex);
-            errObj.genError = defaults.errors.general;
-          }
-          errResp(errObj);
+      const { error, value: pageWithTests } = schema.testPage.validate(request.payload);
+      if (error) {
+        const errObj = {};
+        server.log(['error'], error);
+        if (error.details[0].path[0] === 'title') {
+          errObj.titleError = defaults.errors.title;
         } else {
-          // additional validation that's not possible or insanely complex w/ Joi
-          let wasAdditionalValidationError = false;
-          pageWithTests.test.forEach((t, idx) => {
-            const missingTitle = t.title === defaults.deleteMe;
-            const missingCode = t.code === defaults.deleteMe;
+          errObj.genError = defaults.errors.general;
+        }
 
-            if (missingTitle && !missingCode) {
-              wasAdditionalValidationError = true;
-              request.payload.test[idx].codeTitleError = defaults.errors.codeTitle;
-            }
+        return errResp(errObj);
+      }
 
-            if (missingCode && !missingTitle) {
-              wasAdditionalValidationError = true;
-              request.payload.test[idx].codeError = defaults.errors.code;
-            }
-          });
+      // additional validation that's not possible or insanely complex w/ Joi
+      let wasAdditionalValidationError = false;
+      pageWithTests.test.forEach((t, idx) => {
+        const missingTitle = t.title === defaults.deleteMe;
+        const missingCode = t.code === defaults.deleteMe;
 
-          if (wasAdditionalValidationError) {
-            errResp(errObj);
-          } else {
-            let isOwn = false;
+        if (missingTitle && !missingCode) {
+          wasAdditionalValidationError = true;
+          request.payload.test[idx].codeTitleError = defaults.errors.codeTitle;
+        }
 
-            pagesService.getBySlug(request.params.testSlug, request.params.rev)
-              .then(values => {
-                const prevPage = values[0];
-                const own = request.yar.get('own') || {};
-                isOwn = own[prevPage.id];
-                const isAdmin = request.yar.get('admin');
-                let update = !!(isAdmin || isOwn);
-                server.log('debug', `isAdmin: ${isAdmin} isOwn: ${isOwn} update: ${update}`);
-                return pagesService.edit(pageWithTests, update, prevPage.maxRev, prevPage.id);
-              })
-              .then(resultingRevision => {
-                const r = resultingRevision > 1 ? `/${resultingRevision}` : '';
-
-                reply.redirect(`/${request.params.testSlug}${r}`);
-              }).catch(errResp);
-          }
+        if (missingCode && !missingTitle) {
+          wasAdditionalValidationError = true;
+          request.payload.test[idx].codeError = defaults.errors.code;
         }
       });
+
+      if (wasAdditionalValidationError) {
+        return errResp({});
+      }
+
+      try {
+        const values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
+        const prevPage = values[0];
+        const own = request.yar.get('own') || {};
+        const isOwn = own[prevPage.id];
+        const isAdmin = request.yar.get('admin');
+        const update = !!(isAdmin || isOwn);
+        server.log('debug', `isAdmin: ${isAdmin} isOwn: ${isOwn} update: ${update}`);
+
+        const resultingRevision = await pagesService.edit(pageWithTests, update, prevPage.maxRev, prevPage.id);
+        const r = resultingRevision > 1 ? `/${resultingRevision}` : '';
+
+        return h.redirect(`/${request.params.testSlug}${r}`);
+      } catch (err) {
+        return errResp(err);
+      }
     }
   });
 
   server.route({
     method: 'GET',
     path: '/{testSlug}/edit',
-    handler: function (request, reply) {
-      reply.redirect(`/${request.params.testSlug}/1/edit`);
-    }
+    handler: (request, h) => h.redirect(`/${request.params.testSlug}/1/edit`)
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/edit',
-  dependencies: ['services/pages']
+  dependencies: ['services/pages'],
+  register
 };

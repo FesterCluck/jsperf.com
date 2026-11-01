@@ -1,32 +1,32 @@
-const Boom = require('boom');
+'use strict';
 
-exports.register = function (server, options, next) {
+const Boom = require('@hapi/boom');
+
+const register = (server) => {
   const commentsService = server.plugins['services/comments'];
 
   server.route({
     method: 'GET',
-    config: {
+    options: {
       auth: {
         mode: 'try',
         strategy: 'session'
       }
     },
     path: '/comment/delete/{commentId}',
-    handler: function (request, reply) {
+    handler: async (request) => {
       if (!request.yar.get('admin')) {
-        return reply(Boom.unauthorized('Unauthorized'));
+        throw Boom.unauthorized('Unauthorized');
       }
 
-      commentsService.delete(request.params.commentId)
-        .then(() => reply('Comment deleted'))
-        .catch(reply);
+      await commentsService.delete(request.params.commentId);
+      return 'Comment deleted';
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/comment',
-  dependencies: ['services/comments']
+  dependencies: ['services/comments'],
+  register
 };

@@ -1,82 +1,44 @@
-const path = require('path');
-
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../../support/server');
 const sinon = require('sinon');
 
 const SitemapPlugin = require('../../../../../server/web/sitemap/xml');
 
-const MockRepo = {
-  register: (server, options, next) => {
-    server.expose('getSitemap', function () {});
-    next();
-  }
-};
-
-MockRepo.register.attributes = {
-  name: 'repositories/pages'
-};
+const MockRepo = Support.mock('repositories/pages', ['getSitemap']);
 
 const lab = exports.lab = Lab.script();
 let request, server, getSitemapStub;
 
-lab.beforeEach(function (done) {
-  const plugins = [ MockRepo, SitemapPlugin ];
-  server = new Hapi.Server();
-  server.connection();
-  server.register(require('vision'), () => {
-    server.views({
-      engines: {
-        hbs: require('handlebars')
-      },
-      path: './server/web',
-      layout: true,
-      helpersPath: 'templates/helpers',
-      partialsPath: 'templates/partials',
-      relativeTo: path.join(__dirname, '..', '..', '..', '..', '..')
-    });
-    server.register(plugins, (err) => {
-      if (err) return done(err);
-
-      getSitemapStub = sinon.stub(server.plugins['repositories/pages'], 'getSitemap');
-      done();
-    });
-  });
+lab.beforeEach(async () => {
+  server = await Support.createServer({ plugins: [MockRepo, SitemapPlugin] });
+  getSitemapStub = sinon.stub(server.plugins['repositories/pages'], 'getSitemap');
 });
 
 lab.experiment('sitemap', function () {
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     request = {
       method: 'GET',
       url: '/sitemap.xml'
     };
-
-    done();
   });
 
-  lab.test('it responds with sitemap XML', function (done) {
+  lab.test('it responds with sitemap XML', async function () {
     getSitemapStub.returns(Promise.resolve([]));
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-      Code.expect(response.result).to.include([
-        'urlset',
-        'url>',
-        'loc'
-      ]);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.result).to.include([
+      'urlset',
+      'url>',
+      'loc'
+    ]);
   });
 
-  lab.test('it responds with error', function (done) {
+  lab.test('it responds with error', async function () {
     getSitemapStub.returns(Promise.reject(new Error()));
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(500);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(500);
   });
 });

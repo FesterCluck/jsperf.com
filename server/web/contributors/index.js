@@ -1,17 +1,14 @@
-exports.register = function (server, options, next) {
-  server.route({
-    method: 'GET',
-    path: '/contributors',
-    handler: function (request, reply) {
-      reply.view('contributors/index', {
+'use strict';
+
+exports.plugin = {
+  name: 'web/contributors',
+  register: (server) => {
+    server.route({
+      method: 'GET',
+      path: '/contributors',
+      handler: (request, h) => h.view('contributors/index', {
         headTitle: 'Contributors'
-      });
-    }
-  });
-
-  return next();
-};
-
-exports.register.attributes = {
-  name: 'web/contributors'
+      })
+    });
+  }
 };

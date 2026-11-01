@@ -1,25 +1,22 @@
-exports.register = function (server, options, next) {
-  server.log(['debug'], 'registering auth strategies');
+'use strict';
 
-  server.auth.strategy('session', 'cookie', {
-    password: options.session.password,
-    cookie: options.session.cookie,
-    redirectTo: false,
-    isSecure: options.session.isSecure
-  });
+exports.plugin = {
+  name: 'web/auth/strategies',
+  dependencies: ['@hapi/cookie'],
+  register: (server, options) => {
+    server.log(['debug'], 'registering auth strategies');
 
-  server.auth.strategy('github', 'bell', {
-    provider: 'github',
-    password: options.oauth.password,
-    clientId: options.oauth.clientId,
-    clientSecret: options.oauth.clientSecret,
-    isSecure: options.oauth.isSecure,
-    location: options.oauth.location
-  });
-
-  return next();
-};
-
-exports.register.attributes = {
-  name: 'web/auth/strategies'
+    server.auth.strategy('session', 'cookie', {
+      cookie: {
+        name: options.session.cookie,
+        password: options.session.password,
+        isSecure: options.session.isSecure,
+        isHttpOnly: true,
+        isSameSite: 'Lax',
+        path: '/',
+        ttl: 7 * 24 * 60 * 60 * 1000
+      },
+      redirectTo: false
+    });
+  }
 };

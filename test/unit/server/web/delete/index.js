@@ -1,171 +1,70 @@
-const path = require('path');
-const Lab = require('lab');
+const Lab = require('@hapi/lab');
 const sinon = require('sinon');
-const Code = require('code');
-const Hapi = require('hapi');
-
+const Code = require('@hapi/code');
+const Support = require('../../../../support/server');
 const DeletePlugin = require('../../../../../server/web/delete/index');
 
-const YarPlugin = {
-  register: require('yar'),
-  options: { cookieOptions: { password: 'password-should-be-32-characters' } }
-};
-
-const AuthPlugin = {
-  register: require('hapi-auth-cookie'),
-  options: {}
-};
-
-const MockPagesService = {
-  register: (server, options, next) => {
-    server.expose('deleteBySlug', function () {});
-    next();
-  }
-};
-
-MockPagesService.register.attributes = {
-  name: 'services/pages'
-};
+const MockPagesService = Support.mock('services/pages', ['deleteBySlug']);
 
 const lab = exports.lab = Lab.script();
 let request, server;
 
-lab.beforeEach(done => {
-  server = new Hapi.Server();
+lab.beforeEach(async () => {
+  server = await Support.createServer({ yar: true, auth: true, plugins: [MockPagesService, DeletePlugin] });
 
-  server.connection();
-
-  server.register([ AuthPlugin ], function () {
-    server.auth.strategy('session', 'cookie', {
-      password: 'testing',
-      cookie: 'sid-jsperf',
-      redirectTo: false,
-      isSecure: false
-    });
-  });
-
-  server.register(require('vision'), () => {
-    server.views({
-      engines: {
-        hbs: require('handlebars')
-      },
-      path: './server/web',
-      layout: true,
-      helpersPath: 'templates/helpers',
-      partialsPath: 'templates/partials',
-      relativeTo: path.join(__dirname, '..', '..', '..', '..', '..')
-    });
-    server.register([
-      YarPlugin,
-      MockPagesService,
-      DeletePlugin
-    ], done);
-  });
+  request = {
+    method: 'GET',
+    url: '/test-slug/1/delete'
+  };
 });
 
-lab.experiment('deleting', function () {
-  lab.beforeEach(done => {
-    request = {
-      method: 'GET',
-      url: '/test-slug/1/delete'
-    };
-
-    done();
-  });
-
-  lab.test('while being unauthorized', done => {
-    server.inject(request, response => {
-      Code.expect(response.statusCode).to.equal(401);
-
-      done();
-    });
-  });
-
-  lab.test('multiple revisions while being admin', done => {
-    sinon.stub(server.plugins['services/pages'], 'deleteBySlug').returns(Promise.resolve(3));
-
+lab.experiment('deleting', () => {
+  const adminCookie = async () => {
     server.route({
       method: 'GET',
       path: '/setsession',
-      config: {
-        handler: function (req, reply) {
-          req.yar.set('admin', true);
-          return reply('session set');
-        }
+      handler: (req) => {
+        req.yar.set('admin', true);
+        return 'session set';
       }
     });
 
-    server.inject('/setsession', function (res) {
-      var header = res.headers['set-cookie'];
-      var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
+    return Support.sessionCookie(server, '/setsession');
+  };
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.include('Deleted 3 revisions');
+  lab.test('while being unauthorized', async () => {
+    const response = await server.inject(request);
 
-        done();
-      });
-    });
+    Code.expect(response.statusCode).to.equal(401);
   });
 
-  lab.test('a single revision while being admin', done => {
-    sinon.stub(server.plugins['services/pages'], 'deleteBySlug').returns(Promise.resolve(1));
+  lab.test('multiple revisions while being admin', async () => {
+    sinon.stub(server.plugins['services/pages'], 'deleteBySlug').resolves(3);
+    request.headers = { cookie: await adminCookie() };
 
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      config: {
-        handler: function (req, reply) {
-          req.yar.set('admin', true);
-          return reply('session set');
-        }
-      }
-    });
+    const response = await server.inject(request);
 
-    server.inject('/setsession', function (res) {
-      var header = res.headers['set-cookie'];
-      var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
-      request.url = '/test-slug/23/delete';
-
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.include('Deleted revision 23');
-
-        done();
-      });
-    });
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.result).to.include('Deleted 3 revisions');
   });
 
-  lab.test('a revision that does not exist while being admin', done => {
-    sinon.stub(server.plugins['services/pages'], 'deleteBySlug').returns(Promise.resolve(0));
+  lab.test('a single revision while being admin', async () => {
+    sinon.stub(server.plugins['services/pages'], 'deleteBySlug').resolves(1);
+    request.headers = { cookie: await adminCookie() };
 
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      config: {
-        handler: function (req, reply) {
-          req.yar.set('admin', true);
-          return reply('session set');
-        }
-      }
-    });
+    const response = await server.inject(request);
 
-    server.inject('/setsession', function (res) {
-      var header = res.headers['set-cookie'];
-      var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.result).to.include('Deleted revision 1');
+  });
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.include('Could not delete');
+  lab.test('when nothing is deleted', async () => {
+    sinon.stub(server.plugins['services/pages'], 'deleteBySlug').resolves(0);
+    request.headers = { cookie: await adminCookie() };
 
-        done();
-      });
-    });
+    const response = await server.inject(request);
+
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.result).to.include('Could not delete');
   });
 });

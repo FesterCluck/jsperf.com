@@ -1,16 +1,18 @@
+'use strict';
+
 const defaults = require('../lib/defaults');
 
 const name = 'repositories/tests';
 const table = 'tests';
 
-exports.register = function (server, options, next) {
+const register = (server, options) => {
   const db = server.plugins.db;
   const columns = ['pageID', 'title', 'defer', 'code'];
 
   server.expose('bulkCreate', function (pageID, tests) {
-    var values = [];
-    for (var i = 0, tl = tests.length; i < tl; i++) {
-      var test = tests[i];
+    let values = [];
+    for (let i = 0, tl = tests.length; i < tl; i++) {
+      const test = tests[i];
       values.push('(' + pageID + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ')');
     }
 
@@ -25,7 +27,7 @@ exports.register = function (server, options, next) {
   });
 
   server.expose('bulkUpdate', function (pageID, tests, isOwn) {
-    let queries = [];
+    const queries = [];
 
     tests.forEach(test => {
       // setting existing test title and code to blank indicates it should be deleted
@@ -64,11 +66,10 @@ exports.register = function (server, options, next) {
 
     return db.genericQuery('SELECT * FROM ?? WHERE pageID = ?', [table, pageID]);
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name,
-  dependencies: ['db']
+  dependencies: ['db'],
+  register
 };

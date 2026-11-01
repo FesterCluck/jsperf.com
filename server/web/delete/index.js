@@ -1,49 +1,46 @@
-exports.register = function (server, options, next) {
+'use strict';
+
+const register = (server) => {
   const pagesService = server.plugins['services/pages'];
 
   server.route({
     method: 'GET',
-    config: {
+    options: {
       auth: {
         mode: 'try',
         strategy: 'session'
       }
     },
     path: '/{testSlug}/{rev}/delete',
-    handler: function (request, reply) {
-      var defaultContext = {
+    handler: async (request, h) => {
+      const context = {
         message: '',
         headTitle: 'Delete'
       };
 
       if (!request.yar.get('admin')) {
-        defaultContext.message = 'You do not have permissions to delete a test';
-        return reply.view('delete/index', defaultContext).code(401);
+        context.message = 'You do not have permissions to delete a test';
+        return h.view('delete/index', context).code(401);
       }
 
-      const testSlug = request.params.testSlug;
-      const rev = request.params.rev;
+      const { testSlug, rev } = request.params;
+      const deletedRevisions = await pagesService.deleteBySlug(testSlug, rev);
 
-      pagesService.deleteBySlug(testSlug, rev).then(function (response) {
-        const deletedRevisions = response;
+      if (deletedRevisions === 1) {
+        context.message = `Deleted revision ${rev}`;
+      } else if (deletedRevisions > 1) {
+        context.message = `Deleted ${deletedRevisions} revisions`;
+      } else {
+        context.message = 'Could not delete';
+      }
 
-        if (deletedRevisions === 1) {
-          defaultContext.message = `Deleted revision ${rev}`;
-        } else if (deletedRevisions > 1) {
-          defaultContext.message = `Deleted ${deletedRevisions} revisions`;
-        } else {
-          defaultContext.message = 'Could not delete';
-        }
-
-        reply.view('delete/index', defaultContext);
-      });
+      return h.view('delete/index', context);
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/delete',
-  dependencies: ['services/pages']
+  dependencies: ['services/pages'],
+  register
 };

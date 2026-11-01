@@ -1,154 +1,68 @@
-const path = require('path');
-const Lab = require('lab');
+const Lab = require('@hapi/lab');
 const sinon = require('sinon');
-const Code = require('code');
-const Hapi = require('hapi');
-const cheerio = require('cheerio');
+const Code = require('@hapi/code');
+const Support = require('../../../../support/server');
+const cheerio = require('cheerio/slim');
 
 const defaults = require('../../../../../server/lib/defaults');
 
 const TestPlugin = require('../../../../../server/web/test/index');
 
-const YarPlugin = {
-  register: require('yar'),
-  options: { cookieOptions: { password: 'password-should-be-32-characters' } }
-};
+const MockCommentService = Support.mock('services/comments', ['create']);
 
-const AuthPlugin = {
-  register: require('hapi-auth-cookie'),
-  options: {}
-};
-
-const ScooterPlugin = {
-  register: require('scooter'),
-  options: {}
-};
-
-const MockCommentService = {
-  register: (server, options, next) => {
-    server.expose('create', function () {});
-    next();
-  }
-};
-
-MockCommentService.register.attributes = {
-  name: 'services/comments'
-};
-
-const MockPagesService = {
-  register: (server, options, next) => {
-    server.expose('updateHits', function () {});
-    server.expose('getBySlug', function () {});
-    server.expose('publish', function () {});
-    server.expose('getVisibleBySlugWithRevisions', function () {});
-    next();
-  }
-};
-
-MockPagesService.register.attributes = {
-  name: 'services/pages'
-};
+const MockPagesService = Support.mock('services/pages', ['updateHits', 'getBySlug', 'publish', 'getVisibleBySlugWithRevisions']);
 
 const lab = exports.lab = Lab.script();
 let request, server, pagesServiceStub, commentsServiceStub;
 const now = new Date();
 
-lab.beforeEach(function (done) {
-  server = new Hapi.Server();
+lab.beforeEach(async () => {
+  server = await Support.createServer({ yar: true, auth: true, scooter: true, plugins: [MockPagesService, MockCommentService, TestPlugin] });
 
-  server.connection();
+  pagesServiceStub = {
+    getBySlug: sinon.stub(server.plugins['services/pages'], 'getBySlug'),
+    updateHits: sinon.stub(server.plugins['services/pages'], 'updateHits').returns(Promise.resolve()),
+    getVisibleBySlugWithRevisions: sinon.stub(server.plugins['services/pages'], 'getVisibleBySlugWithRevisions')
+  };
 
-  server.register([AuthPlugin], () => {
-    server.auth.strategy('session', 'cookie', {
-      password: 'testing',
-      cookie: 'sid-jsperf',
-      redirectTo: false,
-      isSecure: false
-    });
-  });
-
-  server.register(require('vision'), () => {
-    server.views({
-      engines: {
-        hbs: require('handlebars')
-      },
-      relativeTo: path.join(__dirname, '..', '..', '..', '..', '..'),
-      path: './server/web',
-      layout: true,
-      helpersPath: 'templates/helpers',
-      partialsPath: 'templates/partials',
-      context: (request) => ({
-        credentials: request.auth.credentials,
-        scheme: 'http',
-        domain: 'jsperf.test'
-      })
-    });
-    server.register([
-      YarPlugin,
-      ScooterPlugin,
-      MockPagesService,
-      MockCommentService,
-      TestPlugin
-    ], (err) => {
-      if (err) return done(err);
-
-      pagesServiceStub = {
-        getBySlug: sinon.stub(server.plugins['services/pages'], 'getBySlug'),
-        updateHits: sinon.stub(server.plugins['services/pages'], 'updateHits').returns(Promise.resolve()),
-        getVisibleBySlugWithRevisions: sinon.stub(server.plugins['services/pages'], 'getVisibleBySlugWithRevisions')
-      };
-
-      commentsServiceStub = {
-        create: sinon.stub(server.plugins['services/comments'], 'create')
-      };
-
-      done();
-    });
-  });
+  commentsServiceStub = {
+    create: sinon.stub(server.plugins['services/comments'], 'create')
+  };
 });
 
 const slug = 'oh-yea';
 
 lab.experiment('web/test plugin', function () {
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     request = {
       method: 'GET',
       url: '/' + slug
     };
-
-    done();
   });
 
-  lab.test('not found', function (done) {
+  lab.test('not found', async function () {
     pagesServiceStub.getBySlug.rejects(new Error('Not found'));
 
     // adding revision to url here covers true case of rev ternary
     request.url += '/999';
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(404);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(404);
   });
 
-  lab.test('fail to get by slug', function (done) {
+  lab.test('fail to get by slug', async function () {
     pagesServiceStub.getBySlug.rejects(new Error('real helpful'));
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(500);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(500);
   });
 
-  lab.test('it responds with test page for slug', function (done) {
+  lab.test('it responds with test page for slug', async function () {
     const now = new Date();
     const page = {
       id: 1,
-      slug: slug,
+      slug,
       revision: 1,
-      browserscopeID: 'abc123',
       title: 'Oh Yea',
       info: 'Sample test',
       setup: '',
@@ -185,31 +99,27 @@ lab.experiment('web/test plugin', function () {
 
     pagesServiceStub.getBySlug.returns(Promise.resolve([page, [], revisions, []]));
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-      const $ = cheerio.load(response.payload);
-      Code.expect($('title').text()).to.equal('Oh Yea · jsPerf');
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
+    const $ = cheerio.load(response.payload);
+    Code.expect($('title').text()).to.equal('Oh Yea · jsPerf');
 
-      // make sure revision list is correct
-      const revLis = $('li', '#revisions');
-      const firstRevLi = revLis.first();
-      Code.expect(firstRevLi.hasClass('current')).to.be.true();
-      Code.expect(firstRevLi.children('a').first().attr('href')).to.equal(request.url);
+    // make sure revision list is correct
+    const revLis = $('li', '#revisions');
+    const firstRevLi = revLis.first();
+    Code.expect(firstRevLi.hasClass('current')).to.be.true();
+    Code.expect(firstRevLi.children('a').first().attr('href')).to.equal(request.url);
 
-      const secondRevLi = revLis.eq(1);
-      Code.expect(secondRevLi.hasClass('current')).to.be.false();
-      Code.expect(secondRevLi.children('a').first().attr('href')).to.equal(request.url + '/' + revisions[1].revision);
-
-      done();
-    });
+    const secondRevLi = revLis.eq(1);
+    Code.expect(secondRevLi.hasClass('current')).to.be.false();
+    Code.expect(secondRevLi.children('a').first().attr('href')).to.equal(request.url + '/' + revisions[1].revision);
   });
 
-  lab.test('it responds with highlighted test page for slug', function (done) {
+  lab.test('it responds with highlighted test page for slug', async function () {
     pagesServiceStub.getBySlug.returns(Promise.resolve([{
       id: 1,
-      slug: slug,
+      slug,
       revision: 1,
-      browserscopeID: 'abc123',
       title: 'Oh Yea',
       info: 'Sample test',
       setup: 'var a = 1',
@@ -224,38 +134,30 @@ lab.experiment('web/test plugin', function () {
       updated: now
     }, [], [], []]));
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-      Code.expect(response.result).to.include('<pre><code class="js"><span class="pretty">  delete a</span></code></pre>');
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.result).to.include('<pre><code class="js">  <span class="hljs-keyword">delete</span> a</code></pre>');
   });
 
   lab.experiment('Page Hits', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       // Add a method of adding session data
       server.route({
         method: 'GET',
         path: '/setsession',
-        config: {
-          handler: function (req, reply) {
-            var hits = {123: true};
-            req.yar.set('hits', hits);
-            return reply('session set');
-          }
+        handler: (req) => {
+          const hits = { 123: true };
+          req.yar.set('hits', hits);
+          return 'session set';
         }
       });
-
-      done();
     });
 
-    lab.test('updates unique page hits', function (done) {
+    lab.test('updates unique page hits', async function () {
       pagesServiceStub.getBySlug.returns(Promise.resolve([{
         id: 1,
-        slug: slug,
+        slug,
         revision: 1,
-        browserscopeID: 'abc123',
         title: 'Oh Yea',
         info: 'Sample test',
         setup: 'var a = 1',
@@ -270,26 +172,21 @@ lab.experiment('web/test plugin', function () {
         updated: now
       }, [], [], []]));
 
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
-        server.inject(request, function (response) {
-          var hits = response.request.yar.get('hits');
-          Code.expect(hits[1]).to.equal(true);
-
-          done();
-        });
-      });
+      const res = await server.inject('/setsession');
+      const header = res.headers['set-cookie'];
+      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
+      request.headers = {};
+      request.headers.cookie = 'session=' + cookie[1];
+      const response = await server.inject(request);
+      const hits = response.request.yar.get('hits');
+      Code.expect(hits[1]).to.equal(true);
     });
 
-    lab.test('ignores duplicate page hits', function (done) {
+    lab.test('ignores duplicate page hits', async function () {
       pagesServiceStub.getBySlug.returns(Promise.resolve([{
         id: 123,
-        slug: slug,
+        slug,
         revision: 1,
-        browserscopeID: 'abc123',
         title: 'Oh Yea',
         info: 'Sample test',
         setup: '',
@@ -304,26 +201,21 @@ lab.experiment('web/test plugin', function () {
         updated: now
       }, [], [], []]));
 
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
-        server.inject(request, function (response) {
-          var hits = response.request.yar.get('hits');
-          Code.expect(hits[123]).to.equal(true);
-
-          done();
-        });
-      });
+      const res = await server.inject('/setsession');
+      const header = res.headers['set-cookie'];
+      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
+      request.headers = {};
+      request.headers.cookie = 'session=' + cookie[1];
+      const response = await server.inject(request);
+      const hits = response.request.yar.get('hits');
+      Code.expect(hits[123]).to.equal(true);
     });
 
-    lab.test('catches errors from page service', function (done) {
+    lab.test('catches errors from page service', async function () {
       pagesServiceStub.getBySlug.returns(Promise.resolve([{
         id: 999,
-        slug: slug,
+        slug,
         revision: 1,
-        browserscopeID: 'abc123',
         title: 'Oh Yea',
         info: 'Sample test',
         setup: '',
@@ -341,27 +233,22 @@ lab.experiment('web/test plugin', function () {
       const expectedError = new Error('catches-errors-from-page-service');
       pagesServiceStub.updateHits.rejects(expectedError);
 
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(200);
-
-          done();
-        });
-      });
+      const res = await server.inject('/setsession');
+      const header = res.headers['set-cookie'];
+      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
+      request.headers = {};
+      request.headers.cookie = 'session=' + cookie[1];
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
   });
 
   lab.experiment('No Index Flag', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       pagesServiceStub.getBySlug.returns(Promise.resolve([{
         id: 1,
-        slug: slug,
+        slug,
         revision: 1,
-        browserscopeID: 'abc123',
         title: 'Oh Yea',
         info: 'Sample test',
         setup: '',
@@ -375,71 +262,56 @@ lab.experiment('web/test plugin', function () {
         published: now,
         updated: now
       }, [], [], []]));
-
-      done();
     });
 
-    lab.test('sets noIndex to true if page is flaged as "owned" in the session', function (done) {
+    lab.test('sets noIndex to true if page is flaged as "owned" in the session', async function () {
       server.route({
         method: 'GET',
         path: '/setsession',
-        config: {
-          handler: function (req, reply) {
-            var owns = {1: true};
-            req.yar.set('own', owns);
-            return reply('session set');
-          }
+        handler: (req) => {
+          const owns = { 1: true };
+          req.yar.set('own', owns);
+          return 'session set';
         }
       });
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
-        server.inject(request, function (response) {
-          Code.expect(response.payload.indexOf('Not published yet!')).to.be.at.least(0);
-
-          done();
-        });
-      });
+      const res = await server.inject('/setsession');
+      const header = res.headers['set-cookie'];
+      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
+      request.headers = {};
+      request.headers.cookie = 'session=' + cookie[1];
+      const response = await server.inject(request);
+      Code.expect(response.payload.indexOf('Not published yet!')).to.be.at.least(0);
     });
 
-    lab.test('sets noIndex to true if page is being viewed by an admin', function (done) {
+    lab.test('sets noIndex to true if page is being viewed by an admin', async function () {
       server.route({
         method: 'GET',
         path: '/setsession',
-        config: {
-          handler: function (req, reply) {
-            var owns = {2: true};
-            req.yar.set('own', owns);
-            req.yar.set('admin', true);
-            return reply('session set');
-          }
+        handler: (req) => {
+          const owns = { 2: true };
+          req.yar.set('own', owns);
+          req.yar.set('admin', true);
+          return 'session set';
         }
       });
 
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
-        server.inject(request, function (response) {
-          Code.expect(response.payload.indexOf('Not published yet!')).to.be.at.least(0);
-
-          done();
-        });
-      });
+      const res = await server.inject('/setsession');
+      const header = res.headers['set-cookie'];
+      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
+      request.headers = {};
+      request.headers.cookie = 'session=' + cookie[1];
+      const response = await server.inject(request);
+      Code.expect(response.payload.indexOf('Not published yet!')).to.be.at.least(0);
     });
   });
 
   lab.experiment('comments form', function () {
-    lab.beforeEach(done => {
+    lab.beforeEach(async () => {
       pagesServiceStub.getBySlug.returns(
         Promise.resolve([{
           id: 1,
-          slug: slug,
+          slug,
           revision: 1,
-          browserscopeID: 'abc123',
           title: 'Oh Yea',
           info: 'Sample test',
           setup: '',
@@ -454,61 +326,45 @@ lab.experiment('web/test plugin', function () {
           updated: now
         }, [], [], []])
       );
-
-      done();
     });
 
-    lab.test('is not displayed if user is anonymous', done => {
-      server.inject(request, response => {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.not.include('method="post" id="comment-form"');
-        Code.expect(response.result).to.include('<a class="login" href="/auth/github">');
-
-        done();
-      });
+    lab.test('is not displayed if user is anonymous', async () => {
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.result).to.not.include('method="post" id="comment-form"');
+      Code.expect(response.result).to.include('<a class="login" href="/login">');
     });
 
-    lab.test('is displayed if user is logged in', done => {
-      request.credentials = {'test': 'profile'};
+    lab.test('is displayed if user is logged in', async () => {
+      request.auth = { strategy: 'session', credentials: { test: 'profile' } };
 
-      server.inject(request, response => {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.include('method="post" id="comment-form"');
-        Code.expect(response.result).to.not.include('<a class="login" href="/auth/github">');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.result).to.include('method="post" id="comment-form"');
+      Code.expect(response.result).to.not.include('<a class="login" href="/login">');
     });
   });
 
   lab.experiment('publish', () => {
-    lab.beforeEach((done) => {
+    lab.beforeEach(async () => {
       request.url = `/${slug}/1/publish`;
-
-      done();
     });
 
-    lab.test('handle error', (done) => {
+    lab.test('handle error', async () => {
       pagesServiceStub.getBySlug.rejects(new Error('testing'));
 
-      server.inject(request, (res) => {
-        Code.expect(res.statusCode).to.equal(500);
-
-        done();
-      });
+      const res = await server.inject(request);
+      Code.expect(res.statusCode).to.equal(500);
     });
 
-    lab.test('404 when not owner or admin', (done) => {
+    lab.test('404 when not owner or admin', async () => {
       pagesServiceStub.getBySlug.returns(Promise.resolve([{}]));
 
-      server.inject(request, (res) => {
-        Code.expect(res.statusCode).to.equal(404);
-
-        done();
-      });
+      const res = await server.inject(request);
+      Code.expect(res.statusCode).to.equal(404);
     });
 
-    lab.test('makes page visible', (done) => {
+    lab.test('makes page visible', async () => {
       pagesServiceStub.getBySlug.returns(Promise.resolve([{
         id: 1
       }]));
@@ -516,81 +372,64 @@ lab.experiment('web/test plugin', function () {
       server.route({
         method: 'GET',
         path: '/setsession',
-        config: {
-          handler: function (req, reply) {
-            var owns = {1: true};
-            req.yar.set('own', owns);
-            return reply('session set');
-          }
+        handler: (req) => {
+          const owns = { 1: true };
+          req.yar.set('own', owns);
+          return 'session set';
         }
       });
 
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
+      const res = await server.inject('/setsession');
+      const header = res.headers['set-cookie'];
+      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
+      request.headers = {};
+      request.headers.cookie = 'session=' + cookie[1];
 
-        server.inject(request, (res) => {
-          Code.expect(res.statusCode).to.equal(302);
-
-          done();
-        });
-      });
+      const published = await server.inject(request);
+      Code.expect(published.statusCode).to.equal(302);
     });
   });
 });
 
 lab.experiment('create comment', () => {
-  lab.beforeEach(done => {
+  lab.beforeEach(async () => {
     request = {
       method: 'POST',
       url: `/${slug}/1`
     };
-
-    done();
   });
 
-  lab.test('not authorized', done => {
-    server.inject(request, res => {
-      Code.expect(res.statusCode).to.equal(401);
-      done();
-    });
+  lab.test('not authorized', async () => {
+    const res = await server.inject(request);
+    Code.expect(res.statusCode).to.equal(401);
   });
 
   lab.experiment('when authorized', () => {
-    lab.beforeEach(done => {
-      request.credentials = {'username': 'somerandomaccount', 'test': 'profile'};
-      done();
+    lab.beforeEach(async () => {
+      request.auth = { strategy: 'session', credentials: { username: 'somerandomaccount', test: 'profile' } };
     });
 
-    lab.test('it catches error', done => {
+    lab.test('it catches error', async () => {
       pagesServiceStub.getBySlug.rejects(new Error('testing'));
 
-      server.inject(request, res => {
-        Code.expect(res.statusCode).to.equal(500);
-        done();
-      });
+      const res = await server.inject(request);
+      Code.expect(res.statusCode).to.equal(500);
     });
 
-    lab.test('not found', function (done) {
+    lab.test('not found', async function () {
       pagesServiceStub.getBySlug.rejects(new Error('Not found'));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(404);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(404);
     });
 
     lab.experiment('and page exists', () => {
-      lab.beforeEach(done => {
+      lab.beforeEach(async () => {
         pagesServiceStub.getBySlug.returns(
           Promise.resolve([{
             id: 1,
-            slug: slug,
+            slug,
             revision: 1,
-            browserscopeID: 'abc123',
             title: 'Oh Yea',
             info: 'Sample test',
             setup: '',
@@ -607,11 +446,9 @@ lab.experiment('create comment', () => {
         );
 
         request.headers = {};
-
-        done();
       });
 
-      lab.test('should show errors if payload is not valid', done => {
+      lab.test('should show errors if payload is not valid', async () => {
         request.payload = {
           author: '',
           authorEmail: '',
@@ -620,19 +457,16 @@ lab.experiment('create comment', () => {
           unknown: ''
         };
 
-        server.inject(request, response => {
-          Code.expect(response.statusCode).to.equal(200);
-          Code.expect(response.result).to.include(defaults.errors.comment.author);
-          Code.expect(response.result).to.include(defaults.errors.comment.authorEmail);
-          Code.expect(response.result).to.include(defaults.errors.comment.authorURL);
-          Code.expect(response.result).to.include(defaults.errors.comment.message);
-
-          done();
-        });
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(200);
+        Code.expect(response.result).to.include(defaults.errors.comment.author);
+        Code.expect(response.result).to.include(defaults.errors.comment.authorEmail);
+        Code.expect(response.result).to.include(defaults.errors.comment.authorURL);
+        Code.expect(response.result).to.include(defaults.errors.comment.message);
       });
 
       lab.experiment('it should respond 200 with ip from', () => {
-        lab.beforeEach(done => {
+        lab.beforeEach(async () => {
           commentsServiceStub.create.returns(Promise.resolve({
             id: 1,
             pageID: 1,
@@ -650,26 +484,20 @@ lab.experiment('create comment', () => {
             authorURL: 'http://b.co',
             message: 'message'
           };
-
-          done();
         });
 
-        lab.test('x-forwarded-for', done => {
-          request.headers = {'x-forwarded-for': '127.0.0.1'};
+        lab.test('x-forwarded-for', async () => {
+          request.headers = { 'x-forwarded-for': '127.0.0.1' };
 
-          server.inject(request, response => {
-            Code.expect(response.statusCode).to.equal(200);
-            done();
-          });
+          const response = await server.inject(request);
+          Code.expect(response.statusCode).to.equal(200);
         });
 
-        lab.test('remoteAddress', done => {
+        lab.test('remoteAddress', async () => {
           request.remoteAddress = '127.0.0.1';
 
-          server.inject(request, response => {
-            Code.expect(response.statusCode).to.equal(200);
-            done();
-          });
+          const response = await server.inject(request);
+          Code.expect(response.statusCode).to.equal(200);
         });
       });
     });
@@ -677,25 +505,21 @@ lab.experiment('create comment', () => {
 });
 
 lab.experiment('atom', () => {
-  lab.beforeEach(done => {
+  lab.beforeEach(async () => {
     request = {
       method: 'GET',
       url: '/my-test.atom'
     };
-
-    done();
   });
 
-  lab.test('not found', done => {
+  lab.test('not found', async () => {
     pagesServiceStub.getVisibleBySlugWithRevisions.rejects(new Error('Not found'));
 
-    server.inject(request, response => {
-      Code.expect(response.statusCode).to.equal(404);
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(404);
   });
 
-  lab.test('it responds with atom feed', done => {
+  lab.test('it responds with atom feed', async () => {
     const d = new Date();
     pagesServiceStub.getVisibleBySlugWithRevisions.returns(Promise.resolve([
       {
@@ -723,61 +547,55 @@ lab.experiment('atom', () => {
       ]
     ]));
 
-    server.inject(request, response => {
-      Code.expect(response.statusCode).to.equal(200);
-      Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
 
-      const dIso = d.toISOString();
-      const strip = (str) => str.replace(/\s/g, '');
-      Code.expect(strip(response.result)).to.equal(strip(`
-        <feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
-            <title>Unit Test</title>
-            <subtitle>The latest revisions for this jsPerf test case</subtitle>
-            <link rel="self" type="application/atom+xml" href="http://jsperf.test/unit-test.atom" />
-            <link rel="alternate" type="text/html" href="http://jsperf.test/unit-test" />
-            <updated>${d.toString()}</updated>
-            <id>tag:jsperf.test,2010:/unit-test</id>
+    const dIso = d.toISOString();
+    const strip = (str) => str.replace(/\s/g, '');
+    Code.expect(strip(response.result)).to.equal(strip(`
+      <feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+          <title>Unit Test</title>
+          <subtitle>The latest revisions for this jsPerf test case</subtitle>
+          <link rel="self" type="application/atom+xml" href="http://jsperf.test/unit-test.atom" />
+          <link rel="alternate" type="text/html" href="http://jsperf.test/unit-test" />
+          <updated>${d.toString()}</updated>
+          <id>tag:jsperf.test,2010:/unit-test</id>
 
-                <entry>
-                    <title>Unit</title>
-                    <author>
-                        <name>Max</name>
-                    </author>
-                    <link rel="alternate" type="text/html" href="http://jsperf.test/unit-test" />
-                    <summary>
-                          No description entered
-                    </summary>
-                    <id>tag:jsperf.test,2010:/unit-test</id>
-                    <published>${dIso}</published>
-                    <updated>${dIso}</updated>
-                </entry>
-                <entry>
-                    <title>Test</title>
-                    <author>
-                        <name>Max</name>
-                    </author>
-                    <link rel="alternate" type="text/html" href="http://jsperf.test/unit-test/2" />
-                    <summary>
-                        desc
-                    </summary>
-                    <id>tag:jsperf.test,2010:/unit-test/2</id>
-                    <published>${dIso}</published>
-                    <updated>${dIso}</updated>
-                </entry>
-        </feed>
-      `));
-
-      done();
-    });
+              <entry>
+                  <title>Unit</title>
+                  <author>
+                      <name>Max</name>
+                  </author>
+                  <link rel="alternate" type="text/html" href="http://jsperf.test/unit-test" />
+                  <summary>
+                        No description entered
+                  </summary>
+                  <id>tag:jsperf.test,2010:/unit-test</id>
+                  <published>${dIso}</published>
+                  <updated>${dIso}</updated>
+              </entry>
+              <entry>
+                  <title>Test</title>
+                  <author>
+                      <name>Max</name>
+                  </author>
+                  <link rel="alternate" type="text/html" href="http://jsperf.test/unit-test/2" />
+                  <summary>
+                      desc
+                  </summary>
+                  <id>tag:jsperf.test,2010:/unit-test/2</id>
+                  <published>${dIso}</published>
+                  <updated>${dIso}</updated>
+              </entry>
+      </feed>
+    `));
   });
 
-  lab.test('it responds with generic error', done => {
+  lab.test('it responds with generic error', async () => {
     pagesServiceStub.getVisibleBySlugWithRevisions.rejects(new Error());
 
-    server.inject(request, response => {
-      Code.expect(response.statusCode).to.equal(500);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(500);
   });
 });

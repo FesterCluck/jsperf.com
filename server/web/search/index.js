@@ -1,58 +1,52 @@
-const Boom = require('boom');
+'use strict';
 
-exports.register = function (server, options, next) {
+const Boom = require('@hapi/boom');
+
+const register = (server) => {
   const pagesService = server.plugins['services/pages'];
 
   server.route({
     method: 'GET',
     path: '/search{ext?}',
-    handler: function (request, reply) {
+    handler: async (request, h) => {
       if (request.params.ext && request.params.ext !== '.atom') {
-        return reply(Boom.notFound());
+        throw Boom.notFound();
       }
 
-      var defaultContext = {
+      const context = {
         headTitle: 'Search',
         admin: false
       };
 
-      var q = request.query.q;
-
-      if (q && q.length > 0) {
-        defaultContext.q = q;
-
-        pagesService.find(q)
-          .then(function (results) {
-            var updated;
-            if (results.length > 0) {
-              defaultContext.pages = results;
-              updated = results[0].updated;
-            } else {
-              defaultContext.genError = 'No results found for query: ' + q;
-              updated = new Date();
-            }
-
-            if (request.params.ext === '.atom') {
-              reply.view('search/atom', defaultContext, {
-                layout: false
-              })
-                .header('Content-Type', 'application/atom+xml;charset=UTF-8')
-                .header('Last-Modified', updated.toString());
-            } else {
-              reply.view('search/results', defaultContext);
-            }
-          })
-          .catch(reply);
-      } else {
-        reply.view('search/form', defaultContext);
+      const q = request.query.q;
+      if (!(q && q.length > 0)) {
+        return h.view('search/form', context);
       }
+
+      context.q = q;
+      const results = await pagesService.find(q);
+      let updated;
+      if (results.length > 0) {
+        context.pages = results;
+        updated = results[0].updated;
+      } else {
+        context.genError = `No results found for query: ${q}`;
+        updated = new Date();
+      }
+
+      if (request.params.ext === '.atom') {
+        return h.view('search/atom', context, { layout: false })
+          .header('Content-Type', 'application/atom+xml;charset=UTF-8')
+          .header('Last-Modified', updated.toString());
+      }
+
+      return h.view('search/results', context);
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/search',
-  dependencies: ['services/pages']
+  dependencies: ['services/pages'],
+  register
 };

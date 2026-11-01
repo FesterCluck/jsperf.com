@@ -18,7 +18,7 @@ npm run build
 
 ## Testing
 
-We use [lab](https://github.com/hapijs/lab) as our test utility and [code](https://github.com/hapijs/code) as our assertion library. Lab lints with [eslint](http://eslint.org/) using the [semistandard style](https://github.com/Flet/semistandard). 100% code coverage by unit tests is required. To run the test suite:
+We use [lab](https://github.com/hapijs/lab) as our test utility and [code](https://github.com/hapijs/code) as our assertion library. Linting uses [eslint](http://eslint.org/) (`npm run lint`) using [neostandard](https://github.com/neostandard/neostandard) with semicolons. 100% code coverage by unit tests is required. To run the test suite:
 
 ```
 npm test
@@ -30,19 +30,14 @@ _If you are missing code coverage, open `coverage.html` in the root of the proje
 
 ### End-to-end (e2e)
 
-End-to-end testing is done by [Selenium Webdriver](https://www.npmjs.com/package/selenium-webdriver). [SauceLabs](https://saucelabs.com) provides Selenium infrastructure for CI. To run tests locally, you'll need [Chrome](https://www.google.com/chrome) and [webdriver-manager](https://www.npmjs.com/package/webdriver-manager).
+End-to-end testing uses [Playwright](https://playwright.dev) with headless Chromium. Install the browser once, then run the specs:
 
 ```
-npm i -g webdriver-manager
-
-webdriver-manager update
+npm run test-e2e:install
+npm run test-e2e
 ```
 
-In one terminal, have jsPerf running (`npm start`). In another, have webdriver-manager running (`webdriver-manager start`). And in yet another, run the tests:
-
-```
-SELENIUM_SERVER=http://127.0.0.1:4444/wd/hub npm run test-e2e
-```
+The runner starts `node server.js` itself (port `E2E_PORT`, default 3100). The server needs a reachable MySQL (it runs migrations on startup) with `MYSQL_USER`, `MYSQL_PASSWORD` and `MYSQL_DATABASE` set (a `.env` file works); Redis is only needed in production. To test an already running server, set `E2E_BASE_URL`. The "create page" spec registers a unique throwaway local user through `/register` (no credentials or extra env vars needed), so it leaves one test user and one test page in the database; use a scratch database.
 
 ### Known Globals
 

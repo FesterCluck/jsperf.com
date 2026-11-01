@@ -1,14 +1,14 @@
-var seconds = (n) => n * 1000;
+const seconds = (n) => n * 1000;
 
-var minutes = (n) => seconds(n) * 60;
+const minutes = (n) => seconds(n) * 60;
 
-var hours = (n) => minutes(n) * 60;
+const hours = (n) => minutes(n) * 60;
 
-var days = (n) => hours(n) * 24;
+const days = (n) => hours(n) * 24;
 
-var weeks = (n) => days(n) * 7;
+const weeks = (n) => days(n) * 7;
 
-var invert = {
+const invert = {
   second: (n) => n / 1000,
   minute: function (n) {
     return this.second(n) / 60;
@@ -24,13 +24,13 @@ var invert = {
   }
 };
 
-var niceTime = function (num, unit) {
+const niceTime = function (num, unit) {
   num = Math.round(invert[unit](num));
   return num + ' ' + unit + (num !== 1 ? 's' : '') + ' ago';
 };
 
 module.exports = function (date) {
-  var diff = Date.now() - date.getTime();
+  const diff = Date.now() - date.getTime();
 
   if (diff < seconds(5)) {
     return 'just now';

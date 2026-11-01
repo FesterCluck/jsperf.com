@@ -1,7 +1,7 @@
 (function(){var _,platform;/**
  * @license
  * Lodash <https://lodash.com/>
- * Copyright JS Foundation and other contributors <https://js.foundation/>
+ * Copyright OpenJS Foundation and other contributors <https://openjsf.org/>
  * Released under MIT license <https://lodash.com/license>
  * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
  * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
@@ -12,14 +12,16 @@
   var undefined;
 
   /** Used as the semantic version number. */
-  var VERSION = '4.17.4';
+  var VERSION = '4.18.1';
 
   /** Used as the size to enable large array optimizations. */
   var LARGE_ARRAY_SIZE = 200;
 
   /** Error message constants. */
   var CORE_ERROR_TEXT = 'Unsupported core-js use. Try https://npms.io/search?q=ponyfill.',
-      FUNC_ERROR_TEXT = 'Expected a function';
+      FUNC_ERROR_TEXT = 'Expected a function',
+      INVALID_TEMPL_VAR_ERROR_TEXT = 'Invalid `variable` option passed into `_.template`',
+      INVALID_TEMPL_IMPORTS_ERROR_TEXT = 'Invalid `imports` option passed into `_.template`';
 
   /** Used to stand-in for `undefined` hash values. */
   var HASH_UNDEFINED = '__lodash_hash_undefined__';
@@ -143,7 +145,6 @@
   /** Used to match property names within property paths. */
   var reIsDeepProp = /\.|\[(?:[^[\]]*|(["'])(?:(?!\1)[^\\]|\\.)*?\1)\]/,
       reIsPlainProp = /^\w*$/,
-      reLeadingDot = /^\./,
       rePropName = /[^.[\]]+|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(?:\.|\[\])(?:\.|\[\]|$))/g;
 
   /**
@@ -153,10 +154,11 @@
   var reRegExpChar = /[\\^$.*+?()[\]{}|]/g,
       reHasRegExpChar = RegExp(reRegExpChar.source);
 
-  /** Used to match leading and trailing whitespace. */
-  var reTrim = /^\s+|\s+$/g,
-      reTrimStart = /^\s+/,
-      reTrimEnd = /\s+$/;
+  /** Used to match leading whitespace. */
+  var reTrimStart = /^\s+/;
+
+  /** Used to match a single whitespace character. */
+  var reWhitespace = /\s/;
 
   /** Used to match wrap detail comments. */
   var reWrapComment = /\{(?:\n\/\* \[wrapped with .+\] \*\/)?\n?/,
@@ -165,6 +167,18 @@
 
   /** Used to match words composed of alphanumeric characters. */
   var reAsciiWord = /[^\x00-\x2f\x3a-\x40\x5b-\x60\x7b-\x7f]+/g;
+
+  /**
+   * Used to validate the `validate` option in `_.template` variable.
+   *
+   * Forbids characters which could potentially change the meaning of the function argument definition:
+   * - "()," (modification of function parameters)
+   * - "=" (default value)
+   * - "[]{}" (destructuring of function parameters)
+   * - "/" (beginning of a comment)
+   * - whitespace
+   */
+  var reForbiddenIdentifierChars = /[()=,{}\[\]\/\s]/;
 
   /** Used to match backslashes in property paths. */
   var reEscapeChar = /\\(\\)?/g;
@@ -243,8 +257,8 @@
       reOptMod = rsModifier + '?',
       rsOptVar = '[' + rsVarRange + ']?',
       rsOptJoin = '(?:' + rsZWJ + '(?:' + [rsNonAstral, rsRegional, rsSurrPair].join('|') + ')' + rsOptVar + reOptMod + ')*',
-      rsOrdLower = '\\d*(?:(?:1st|2nd|3rd|(?![123])\\dth)\\b)',
-      rsOrdUpper = '\\d*(?:(?:1ST|2ND|3RD|(?![123])\\dTH)\\b)',
+      rsOrdLower = '\\d*(?:1st|2nd|3rd|(?![123])\\dth)(?=\\b|[A-Z_])',
+      rsOrdUpper = '\\d*(?:1ST|2ND|3RD|(?![123])\\dTH)(?=\\b|[a-z_])',
       rsSeq = rsOptVar + reOptMod + rsOptJoin,
       rsEmoji = '(?:' + [rsDingbat, rsRegional, rsSurrPair].join('|') + ')' + rsSeq,
       rsSymbol = '(?:' + [rsNonAstral + rsCombo + '?', rsCombo, rsRegional, rsSurrPair, rsAstral].join('|') + ')';
@@ -277,7 +291,7 @@
   var reHasUnicode = RegExp('[' + rsZWJ + rsAstralRange  + rsComboRange + rsVarRange + ']');
 
   /** Used to detect strings that need a more robust regexp to match words. */
-  var reHasUnicodeWord = /[a-z][A-Z]|[A-Z]{2,}[a-z]|[0-9][a-zA-Z]|[a-zA-Z][0-9]|[^a-zA-Z0-9 ]/;
+  var reHasUnicodeWord = /[a-z][A-Z]|[A-Z]{2}[a-z]|[0-9][a-zA-Z]|[a-zA-Z][0-9]|[^a-zA-Z0-9 ]/;
 
   /** Used to assign default `context` object properties. */
   var contextProps = [
@@ -437,6 +451,14 @@
   /** Used to access faster Node.js helpers. */
   var nodeUtil = (function() {
     try {
+      // Use `util.types` for Node.js 10+.
+      var types = freeModule && freeModule.require && freeModule.require('util').types;
+
+      if (types) {
+        return types;
+      }
+
+      // Legacy `process.binding('util')` for Node.js < 10.
       return freeProcess && freeProcess.binding && freeProcess.binding('util');
     } catch (e) {}
   }());
@@ -450,34 +472,6 @@
       nodeIsTypedArray = nodeUtil && nodeUtil.isTypedArray;
 
   /*--------------------------------------------------------------------------*/
-
-  /**
-   * Adds the key-value `pair` to `map`.
-   *
-   * @private
-   * @param {Object} map The map to modify.
-   * @param {Array} pair The key-value pair to add.
-   * @returns {Object} Returns `map`.
-   */
-  function addMapEntry(map, pair) {
-    // Don't return `map.set` because it's not chainable in IE 11.
-    map.set(pair[0], pair[1]);
-    return map;
-  }
-
-  /**
-   * Adds `value` to `set`.
-   *
-   * @private
-   * @param {Object} set The set to modify.
-   * @param {*} value The value to add.
-   * @returns {Object} Returns `set`.
-   */
-  function addSetEntry(set, value) {
-    // Don't return `set.add` because it's not chainable in IE 11.
-    set.add(value);
-    return set;
-  }
 
   /**
    * A faster alternative to `Function#apply`, this function invokes `func`
@@ -1015,6 +1009,19 @@
   }
 
   /**
+   * The base implementation of `_.trim`.
+   *
+   * @private
+   * @param {string} string The string to trim.
+   * @returns {string} Returns the trimmed string.
+   */
+  function baseTrim(string) {
+    return string
+      ? string.slice(0, trimmedEndIndex(string) + 1).replace(reTrimStart, '')
+      : string;
+  }
+
+  /**
    * The base implementation of `_.unary` without support for storing metadata.
    *
    * @private
@@ -1345,6 +1352,21 @@
     return hasUnicode(string)
       ? unicodeToArray(string)
       : asciiToArray(string);
+  }
+
+  /**
+   * Used by `_.trim` and `_.trimEnd` to get the index of the last non-whitespace
+   * character of `string`.
+   *
+   * @private
+   * @param {string} string The string to inspect.
+   * @returns {number} Returns the index of the last non-whitespace character.
+   */
+  function trimmedEndIndex(string) {
+    var index = string.length;
+
+    while (index-- && reWhitespace.test(string.charAt(index))) {}
+    return index;
   }
 
   /**
@@ -1730,6 +1752,10 @@
      * By default, the template delimiters used by lodash are like those in
      * embedded Ruby (ERB) as well as ES2015 template strings. Change the
      * following template settings to use alternative delimiters.
+     *
+     * **Security:** See
+     * [threat model](https://github.com/lodash/lodash/blob/main/threat-model.md)
+     * — `_.template` is insecure and will be removed in v5.
      *
      * @static
      * @memberOf _
@@ -2279,7 +2305,7 @@
      * @name has
      * @memberOf SetCache
      * @param {*} value The value to search for.
-     * @returns {number} Returns `true` if `value` is found, else `false`.
+     * @returns {boolean} Returns `true` if `value` is found, else `false`.
      */
     function setCacheHas(value) {
       return this.__data__.has(value);
@@ -2677,7 +2703,7 @@
           if (!cloneableTags[tag]) {
             return object ? value : {};
           }
-          result = initCloneByTag(value, tag, baseClone, isDeep);
+          result = initCloneByTag(value, tag, isDeep);
         }
       }
       // Check for circular references and return its corresponding clone.
@@ -2687,6 +2713,16 @@
         return stacked;
       }
       stack.set(value, result);
+
+      if (isSet(value)) {
+        value.forEach(function(subValue) {
+          result.add(baseClone(subValue, bitmask, customizer, subValue, value, stack));
+        });
+      } else if (isMap(value)) {
+        value.forEach(function(subValue, key) {
+          result.set(key, baseClone(subValue, bitmask, customizer, key, value, stack));
+        });
+      }
 
       var keysFunc = isFull
         ? (isFlat ? getAllKeysIn : getAllKeys)
@@ -3609,13 +3645,13 @@
         return;
       }
       baseFor(source, function(srcValue, key) {
+        stack || (stack = new Stack);
         if (isObject(srcValue)) {
-          stack || (stack = new Stack);
           baseMergeDeep(object, source, key, srcIndex, baseMerge, customizer, stack);
         }
         else {
           var newValue = customizer
-            ? customizer(object[key], srcValue, (key + ''), object, source, stack)
+            ? customizer(safeGet(object, key), srcValue, (key + ''), object, source, stack)
             : undefined;
 
           if (newValue === undefined) {
@@ -3642,8 +3678,8 @@
      *  counterparts.
      */
     function baseMergeDeep(object, source, key, srcIndex, mergeFunc, customizer, stack) {
-      var objValue = object[key],
-          srcValue = source[key],
+      var objValue = safeGet(object, key),
+          srcValue = safeGet(source, key),
           stacked = stack.get(srcValue);
 
       if (stacked) {
@@ -3686,7 +3722,7 @@
           if (isArguments(objValue)) {
             newValue = toPlainObject(objValue);
           }
-          else if (!isObject(objValue) || (srcIndex && isFunction(objValue))) {
+          else if (!isObject(objValue) || isFunction(objValue)) {
             newValue = initCloneObject(srcValue);
           }
         }
@@ -3730,8 +3766,21 @@
      * @returns {Array} Returns the new sorted array.
      */
     function baseOrderBy(collection, iteratees, orders) {
+      if (iteratees.length) {
+        iteratees = arrayMap(iteratees, function(iteratee) {
+          if (isArray(iteratee)) {
+            return function(value) {
+              return baseGet(value, iteratee.length === 1 ? iteratee[0] : iteratee);
+            };
+          }
+          return iteratee;
+        });
+      } else {
+        iteratees = [identity];
+      }
+
       var index = -1;
-      iteratees = arrayMap(iteratees.length ? iteratees : [identity], baseUnary(getIteratee()));
+      iteratees = arrayMap(iteratees, baseUnary(getIteratee()));
 
       var result = baseMap(collection, function(value, key, collection) {
         var criteria = arrayMap(iteratees, function(iteratee) {
@@ -3988,6 +4037,10 @@
         var key = toKey(path[index]),
             newValue = value;
 
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+          return object;
+        }
+
         if (index != lastIndex) {
           var objValue = nested[key];
           newValue = customizer ? customizer(objValue, key, nested) : undefined;
@@ -4140,11 +4193,14 @@
      *  into `array`.
      */
     function baseSortedIndexBy(array, value, iteratee, retHighest) {
-      value = iteratee(value);
-
       var low = 0,
-          high = array == null ? 0 : array.length,
-          valIsNaN = value !== value,
+          high = array == null ? 0 : array.length;
+      if (high === 0) {
+        return 0;
+      }
+
+      value = iteratee(value);
+      var valIsNaN = value !== value,
           valIsNull = value === null,
           valIsSymbol = isSymbol(value),
           valIsUndefined = value === undefined;
@@ -4319,8 +4375,34 @@
      */
     function baseUnset(object, path) {
       path = castPath(path, object);
-      object = parent(object, path);
-      return object == null || delete object[toKey(last(path))];
+
+      // Prevent prototype pollution:
+      // https://github.com/lodash/lodash/security/advisories/GHSA-xxjr-mmjv-4gpg
+      // https://github.com/lodash/lodash/security/advisories/GHSA-f23m-r3pf-42rh
+      var index = -1,
+          length = path.length;
+
+      if (!length) {
+        return true;
+      }
+
+      while (++index < length) {
+        var key = toKey(path[index]);
+
+        // Always block "__proto__" anywhere in the path if it's not expected
+        if (key === '__proto__' && !hasOwnProperty.call(object, '__proto__')) {
+          return false;
+        }
+
+        // Block constructor/prototype as non-terminal traversal keys to prevent
+        // escaping the object graph into built-in constructors and prototypes.
+        if ((key === 'constructor' || key === 'prototype') && index < length - 1) {
+          return false;
+        }
+      }
+
+      var obj = parent(object, path);
+      return obj == null || delete obj[toKey(last(path))];
     }
 
     /**
@@ -4552,20 +4634,6 @@
     }
 
     /**
-     * Creates a clone of `map`.
-     *
-     * @private
-     * @param {Object} map The map to clone.
-     * @param {Function} cloneFunc The function to clone values.
-     * @param {boolean} [isDeep] Specify a deep clone.
-     * @returns {Object} Returns the cloned map.
-     */
-    function cloneMap(map, isDeep, cloneFunc) {
-      var array = isDeep ? cloneFunc(mapToArray(map), CLONE_DEEP_FLAG) : mapToArray(map);
-      return arrayReduce(array, addMapEntry, new map.constructor);
-    }
-
-    /**
      * Creates a clone of `regexp`.
      *
      * @private
@@ -4576,20 +4644,6 @@
       var result = new regexp.constructor(regexp.source, reFlags.exec(regexp));
       result.lastIndex = regexp.lastIndex;
       return result;
-    }
-
-    /**
-     * Creates a clone of `set`.
-     *
-     * @private
-     * @param {Object} set The set to clone.
-     * @param {Function} cloneFunc The function to clone values.
-     * @param {boolean} [isDeep] Specify a deep clone.
-     * @returns {Object} Returns the cloned set.
-     */
-    function cloneSet(set, isDeep, cloneFunc) {
-      var array = isDeep ? cloneFunc(setToArray(set), CLONE_DEEP_FLAG) : setToArray(set);
-      return arrayReduce(array, addSetEntry, new set.constructor);
     }
 
     /**
@@ -5455,7 +5509,7 @@
       return function(number, precision) {
         number = toNumber(number);
         precision = precision == null ? 0 : nativeMin(toInteger(precision), 292);
-        if (precision) {
+        if (precision && nativeIsFinite(number)) {
           // Shift with exponential notation to avoid floating-point issues.
           // See [MDN](https://mdn.io/round#Examples) for more details.
           var pair = (toString(number) + 'e').split('e'),
@@ -5657,10 +5711,11 @@
       if (arrLength != othLength && !(isPartial && othLength > arrLength)) {
         return false;
       }
-      // Assume cyclic values are equal.
-      var stacked = stack.get(array);
-      if (stacked && stack.get(other)) {
-        return stacked == other;
+      // Check that cyclic values are equal.
+      var arrStacked = stack.get(array);
+      var othStacked = stack.get(other);
+      if (arrStacked && othStacked) {
+        return arrStacked == other && othStacked == array;
       }
       var index = -1,
           result = true,
@@ -5822,10 +5877,11 @@
           return false;
         }
       }
-      // Assume cyclic values are equal.
-      var stacked = stack.get(object);
-      if (stacked && stack.get(other)) {
-        return stacked == other;
+      // Check that cyclic values are equal.
+      var objStacked = stack.get(object);
+      var othStacked = stack.get(other);
+      if (objStacked && othStacked) {
+        return objStacked == other && othStacked == object;
       }
       var result = true;
       stack.set(object, other);
@@ -6186,7 +6242,7 @@
      */
     function initCloneArray(array) {
       var length = array.length,
-          result = array.constructor(length);
+          result = new array.constructor(length);
 
       // Add properties assigned by `RegExp#exec`.
       if (length && typeof array[0] == 'string' && hasOwnProperty.call(array, 'index')) {
@@ -6213,16 +6269,15 @@
      * Initializes an object clone based on its `toStringTag`.
      *
      * **Note:** This function only supports cloning values with tags of
-     * `Boolean`, `Date`, `Error`, `Number`, `RegExp`, or `String`.
+     * `Boolean`, `Date`, `Error`, `Map`, `Number`, `RegExp`, `Set`, or `String`.
      *
      * @private
      * @param {Object} object The object to clone.
      * @param {string} tag The `toStringTag` of the object to clone.
-     * @param {Function} cloneFunc The function to clone values.
      * @param {boolean} [isDeep] Specify a deep clone.
      * @returns {Object} Returns the initialized clone.
      */
-    function initCloneByTag(object, tag, cloneFunc, isDeep) {
+    function initCloneByTag(object, tag, isDeep) {
       var Ctor = object.constructor;
       switch (tag) {
         case arrayBufferTag:
@@ -6241,7 +6296,7 @@
           return cloneTypedArray(object, isDeep);
 
         case mapTag:
-          return cloneMap(object, isDeep, cloneFunc);
+          return new Ctor;
 
         case numberTag:
         case stringTag:
@@ -6251,7 +6306,7 @@
           return cloneRegExp(object);
 
         case setTag:
-          return cloneSet(object, isDeep, cloneFunc);
+          return new Ctor;
 
         case symbolTag:
           return cloneSymbol(object);
@@ -6298,10 +6353,13 @@
      * @returns {boolean} Returns `true` if `value` is a valid index, else `false`.
      */
     function isIndex(value, length) {
+      var type = typeof value;
       length = length == null ? MAX_SAFE_INTEGER : length;
+
       return !!length &&
-        (typeof value == 'number' || reIsUint.test(value)) &&
-        (value > -1 && value % 1 == 0 && value < length);
+        (type == 'number' ||
+          (type != 'symbol' && reIsUint.test(value))) &&
+            (value > -1 && value % 1 == 0 && value < length);
     }
 
     /**
@@ -6636,6 +6694,26 @@
     }
 
     /**
+     * Gets the value at `key`, unless `key` is "__proto__" or "constructor".
+     *
+     * @private
+     * @param {Object} object The object to query.
+     * @param {string} key The key of the property to get.
+     * @returns {*} Returns the property value.
+     */
+    function safeGet(object, key) {
+      if (key === 'constructor' && typeof object[key] === 'function') {
+        return;
+      }
+
+      if (key == '__proto__') {
+        return;
+      }
+
+      return object[key];
+    }
+
+    /**
      * Sets metadata for `func`.
      *
      * **Note:** If this function becomes hot, i.e. is invoked a lot in a short
@@ -6751,11 +6829,11 @@
      */
     var stringToPath = memoizeCapped(function(string) {
       var result = [];
-      if (reLeadingDot.test(string)) {
+      if (string.charCodeAt(0) === 46 /* . */) {
         result.push('');
       }
-      string.replace(rePropName, function(match, number, quote, string) {
-        result.push(quote ? string.replace(reEscapeChar, '$1') : (number || match));
+      string.replace(rePropName, function(match, number, quote, subString) {
+        result.push(quote ? subString.replace(reEscapeChar, '$1') : (number || match));
       });
       return result;
     });
@@ -6875,7 +6953,7 @@
 
     /**
      * Creates an array with all falsey values removed. The values `false`, `null`,
-     * `0`, `""`, `undefined`, and `NaN` are falsey.
+     * `0`, `-0`, `0n`, `""`, `undefined`, and `NaN` are falsy.
      *
      * @static
      * @memberOf _
@@ -7414,7 +7492,7 @@
 
       while (++index < length) {
         var pair = pairs[index];
-        result[pair[0]] = pair[1];
+        baseAssignValue(result, pair[0], pair[1]);
       }
       return result;
     }
@@ -9184,6 +9262,10 @@
      * // The `_.property` iteratee shorthand.
      * _.filter(users, 'active');
      * // => objects for ['barney']
+     *
+     * // Combining several predicates using `_.overEvery` or `_.overSome`.
+     * _.filter(users, _.overSome([{ 'age': 36 }, ['age', 40]]));
+     * // => objects for ['fred', 'barney']
      */
     function filter(collection, predicate) {
       var func = isArray(collection) ? arrayFilter : baseFilter;
@@ -9933,15 +10015,15 @@
      * var users = [
      *   { 'user': 'fred',   'age': 48 },
      *   { 'user': 'barney', 'age': 36 },
-     *   { 'user': 'fred',   'age': 40 },
+     *   { 'user': 'fred',   'age': 30 },
      *   { 'user': 'barney', 'age': 34 }
      * ];
      *
      * _.sortBy(users, [function(o) { return o.user; }]);
-     * // => objects for [['barney', 36], ['barney', 34], ['fred', 48], ['fred', 40]]
+     * // => objects for [['barney', 36], ['barney', 34], ['fred', 48], ['fred', 30]]
      *
      * _.sortBy(users, ['user', 'age']);
-     * // => objects for [['barney', 34], ['barney', 36], ['fred', 40], ['fred', 48]]
+     * // => objects for [['barney', 34], ['barney', 36], ['fred', 30], ['fred', 48]]
      */
     var sortBy = baseRest(function(collection, iteratees) {
       if (collection == null) {
@@ -10363,9 +10445,11 @@
       function remainingWait(time) {
         var timeSinceLastCall = time - lastCallTime,
             timeSinceLastInvoke = time - lastInvokeTime,
-            result = wait - timeSinceLastCall;
+            timeWaiting = wait - timeSinceLastCall;
 
-        return maxing ? nativeMin(result, maxWait - timeSinceLastInvoke) : result;
+        return maxing
+          ? nativeMin(timeWaiting, maxWait - timeSinceLastInvoke)
+          : timeWaiting;
       }
 
       function shouldInvoke(time) {
@@ -10426,6 +10510,7 @@
           }
           if (maxing) {
             // Handle invocations in a tight loop.
+            clearTimeout(timerId);
             timerId = setTimeout(timerExpired, wait);
             return invokeFunc(lastCallTime);
           }
@@ -12482,7 +12567,7 @@
       if (typeof value != 'string') {
         return value === 0 ? value : +value;
       }
-      value = value.replace(reTrim, '');
+      value = baseTrim(value);
       var isBinary = reIsBinary.test(value);
       return (isBinary || reIsOctal.test(value))
         ? freeParseInt(value.slice(2), isBinary ? 2 : 8)
@@ -12797,9 +12882,35 @@
      * _.defaults({ 'a': 1 }, { 'b': 2 }, { 'a': 3 });
      * // => { 'a': 1, 'b': 2 }
      */
-    var defaults = baseRest(function(args) {
-      args.push(undefined, customDefaultsAssignIn);
-      return apply(assignInWith, undefined, args);
+    var defaults = baseRest(function(object, sources) {
+      object = Object(object);
+
+      var index = -1;
+      var length = sources.length;
+      var guard = length > 2 ? sources[2] : undefined;
+
+      if (guard && isIterateeCall(sources[0], sources[1], guard)) {
+        length = 1;
+      }
+
+      while (++index < length) {
+        var source = sources[index];
+        var props = keysIn(source);
+        var propsIndex = -1;
+        var propsLength = props.length;
+
+        while (++propsIndex < propsLength) {
+          var key = props[propsIndex];
+          var value = object[key];
+
+          if (value === undefined ||
+              (eq(value, objectProto[key]) && !hasOwnProperty.call(object, key))) {
+            object[key] = source[key];
+          }
+        }
+      }
+
+      return object;
     });
 
     /**
@@ -13196,6 +13307,11 @@
      * // => { '1': 'c', '2': 'b' }
      */
     var invert = createInverter(function(result, value, key) {
+      if (value != null &&
+          typeof value.toString != 'function') {
+        value = nativeObjectToString.call(value);
+      }
+
       result[value] = key;
     }, constant(identity));
 
@@ -13226,6 +13342,11 @@
      * // => { 'group1': ['a', 'c'], 'group2': ['b'] }
      */
     var invertBy = createInverter(function(result, value, key) {
+      if (value != null &&
+          typeof value.toString != 'function') {
+        value = nativeObjectToString.call(value);
+      }
+
       if (hasOwnProperty.call(result, value)) {
         result[value].push(key);
       } else {
@@ -14031,6 +14152,8 @@
      * **Note:** JavaScript follows the IEEE-754 standard for resolving
      * floating-point values which can produce unexpected results.
      *
+     * **Note:** If `lower` is greater than `upper`, the values are swapped.
+     *
      * @static
      * @memberOf _
      * @since 0.7.0
@@ -14044,8 +14167,15 @@
      * _.random(0, 5);
      * // => an integer between 0 and 5
      *
+     * // when lower is greater than upper the values are swapped
+     * _.random(5, 0);
+     * // => an integer between 0 and 5
+     *
      * _.random(5);
      * // => also an integer between 0 and 5
+     *
+     * _.random(-5);
+     * // => an integer between -5 and 0
      *
      * _.random(5, true);
      * // => a floating-point number between 0 and 5
@@ -14648,6 +14778,10 @@
      * properties may be accessed as free variables in the template. If a setting
      * object is given, it takes precedence over `_.templateSettings` values.
      *
+     * **Security:** `_.template` is insecure and should not be used. It will be
+     * removed in Lodash v5. Avoid untrusted input. See
+     * [threat model](https://github.com/lodash/lodash/blob/main/threat-model.md).
+     *
      * **Note:** In the development build `_.template` utilizes
      * [sourceURLs](http://www.html5rocks.com/en/tutorials/developertools/sourcemaps/#toc-sourceurl)
      * for easier debugging.
@@ -14755,11 +14889,17 @@
         options = undefined;
       }
       string = toString(string);
-      options = assignInWith({}, options, settings, customDefaultsAssignIn);
+      options = assignWith({}, options, settings, customDefaultsAssignIn);
 
-      var imports = assignInWith({}, options.imports, settings.imports, customDefaultsAssignIn),
+      var imports = assignWith({}, options.imports, settings.imports, customDefaultsAssignIn),
           importsKeys = keys(imports),
           importsValues = baseValues(imports, importsKeys);
+
+      arrayEach(importsKeys, function(key) {
+        if (reForbiddenIdentifierChars.test(key)) {
+          throw new Error(INVALID_TEMPL_IMPORTS_ERROR_TEXT);
+        }
+      });
 
       var isEscaping,
           isEvaluating,
@@ -14776,9 +14916,12 @@
       , 'g');
 
       // Use a sourceURL for easier debugging.
+      // The sourceURL gets injected into the source that's eval-ed, so be careful
+      // to normalize all kinds of whitespace, so e.g. newlines (and unicode versions of it) can't sneak in
+      // and escape the comment, thus injecting code that gets evaled.
       var sourceURL = '//# sourceURL=' +
-        ('sourceURL' in options
-          ? options.sourceURL
+        (hasOwnProperty.call(options, 'sourceURL')
+          ? (options.sourceURL + '').replace(/\s/g, ' ')
           : ('lodash.templateSources[' + (++templateCounter) + ']')
         ) + '\n';
 
@@ -14811,10 +14954,16 @@
 
       // If `variable` is not specified wrap a with-statement around the generated
       // code to add the data object to the top of the scope chain.
-      var variable = options.variable;
+      var variable = hasOwnProperty.call(options, 'variable') && options.variable;
       if (!variable) {
         source = 'with (obj) {\n' + source + '\n}\n';
       }
+      // Throw an error if a forbidden character was found in `variable`, to prevent
+      // potential command injection attacks.
+      else if (reForbiddenIdentifierChars.test(variable)) {
+        throw new Error(INVALID_TEMPL_VAR_ERROR_TEXT);
+      }
+
       // Cleanup code by stripping empty strings.
       source = (isEvaluating ? source.replace(reEmptyStringLeading, '') : source)
         .replace(reEmptyStringMiddle, '$1')
@@ -14928,7 +15077,7 @@
     function trim(string, chars, guard) {
       string = toString(string);
       if (string && (guard || chars === undefined)) {
-        return string.replace(reTrim, '');
+        return baseTrim(string);
       }
       if (!string || !(chars = baseToString(chars))) {
         return string;
@@ -14963,7 +15112,7 @@
     function trimEnd(string, chars, guard) {
       string = toString(string);
       if (string && (guard || chars === undefined)) {
-        return string.replace(reTrimEnd, '');
+        return string.slice(0, trimmedEndIndex(string) + 1);
       }
       if (!string || !(chars = baseToString(chars))) {
         return string;
@@ -15517,6 +15666,9 @@
      * values against any array or object value, respectively. See `_.isEqual`
      * for a list of supported value comparisons.
      *
+     * **Note:** Multiple values can be checked by combining several matchers
+     * using `_.overSome`
+     *
      * @static
      * @memberOf _
      * @since 3.0.0
@@ -15532,6 +15684,10 @@
      *
      * _.filter(objects, _.matches({ 'a': 4, 'c': 6 }));
      * // => [{ 'a': 4, 'b': 5, 'c': 6 }]
+     *
+     * // Checking for several possible values
+     * _.filter(objects, _.overSome([_.matches({ 'a': 1 }), _.matches({ 'a': 4 })]));
+     * // => [{ 'a': 1, 'b': 2, 'c': 3 }, { 'a': 4, 'b': 5, 'c': 6 }]
      */
     function matches(source) {
       return baseMatches(baseClone(source, CLONE_DEEP_FLAG));
@@ -15545,6 +15701,9 @@
      * **Note:** Partial comparisons will match empty array and empty object
      * `srcValue` values against any array or object value, respectively. See
      * `_.isEqual` for a list of supported value comparisons.
+     *
+     * **Note:** Multiple values can be checked by combining several matchers
+     * using `_.overSome`
      *
      * @static
      * @memberOf _
@@ -15562,6 +15721,10 @@
      *
      * _.find(objects, _.matchesProperty('a', 4));
      * // => { 'a': 4, 'b': 5, 'c': 6 }
+     *
+     * // Checking for several possible values
+     * _.filter(objects, _.overSome([_.matchesProperty('a', 1), _.matchesProperty('a', 4)]));
+     * // => [{ 'a': 1, 'b': 2, 'c': 3 }, { 'a': 4, 'b': 5, 'c': 6 }]
      */
     function matchesProperty(path, srcValue) {
       return baseMatchesProperty(path, baseClone(srcValue, CLONE_DEEP_FLAG));
@@ -15785,6 +15948,10 @@
      * Creates a function that checks if **all** of the `predicates` return
      * truthy when invoked with the arguments it receives.
      *
+     * Following shorthands are possible for providing predicates.
+     * Pass an `Object` and it will be used as an parameter for `_.matches` to create the predicate.
+     * Pass an `Array` of parameters for `_.matchesProperty` and the predicate will be created using them.
+     *
      * @static
      * @memberOf _
      * @since 4.0.0
@@ -15811,6 +15978,10 @@
      * Creates a function that checks if **any** of the `predicates` return
      * truthy when invoked with the arguments it receives.
      *
+     * Following shorthands are possible for providing predicates.
+     * Pass an `Object` and it will be used as an parameter for `_.matches` to create the predicate.
+     * Pass an `Array` of parameters for `_.matchesProperty` and the predicate will be created using them.
+     *
      * @static
      * @memberOf _
      * @since 4.0.0
@@ -15830,6 +16001,9 @@
      *
      * func(NaN);
      * // => false
+     *
+     * var matchesFunc = _.overSome([{ 'a': 1 }, { 'a': 2 }])
+     * var matchesPropertyFunc = _.overSome([['a', 1], ['a', 2]])
      */
     var overSome = createOver(arraySome);
 
@@ -17016,10 +17190,11 @@
     baseForOwn(LazyWrapper.prototype, function(func, methodName) {
       var lodashFunc = lodash[methodName];
       if (lodashFunc) {
-        var key = (lodashFunc.name + ''),
-            names = realNames[key] || (realNames[key] = []);
-
-        names.push({ 'name': methodName, 'func': lodashFunc });
+        var key = lodashFunc.name + '';
+        if (!hasOwnProperty.call(realNames, key)) {
+          realNames[key] = [];
+        }
+        realNames[key].push({ 'name': methodName, 'func': lodashFunc });
       }
     });
 
@@ -17084,10 +17259,10 @@
 }.call(this));
 
 /*!
- * Platform.js <https://mths.be/platform>
- * Copyright 2014-2016 Benjamin Tan <https://demoneaux.github.io/>
- * Copyright 2011-2013 John-David Dalton <http://allyoucanleet.com/>
- * Available under MIT license <https://mths.be/mit>
+ * Platform.js v1.3.6
+ * Copyright 2014-2020 Benjamin Tan
+ * Copyright 2011-2013 John-David Dalton
+ * Available under MIT license
  */
 ;(function() {
   'use strict';
@@ -17442,6 +17617,7 @@
       'Avant Browser',
       'Breach',
       'Camino',
+      'Electron',
       'Epiphany',
       'Fennec',
       'Flock',
@@ -17453,7 +17629,7 @@
       'Konqueror',
       'Lunascape',
       'Maxthon',
-      { 'label': 'Microsoft Edge', 'pattern': 'Edge' },
+      { 'label': 'Microsoft Edge', 'pattern': '(?:Edge|Edg|EdgA|EdgiOS)' },
       'Midori',
       'Nook Browser',
       'PaleMoon',
@@ -17461,6 +17637,7 @@
       'Raven',
       'Rekonq',
       'RockMelt',
+      { 'label': 'Samsung Internet', 'pattern': 'SamsungBrowser' },
       'SeaMonkey',
       { 'label': 'Silk', 'pattern': '(?:Cloud9|Silk-Accelerated)' },
       'Sleipnir',
@@ -17468,12 +17645,18 @@
       { 'label': 'SRWare Iron', 'pattern': 'Iron' },
       'Sunrise',
       'Swiftfox',
+      'Vivaldi',
+      'Waterfox',
       'WebPositive',
+      { 'label': 'Yandex Browser', 'pattern': 'YaBrowser' },
+      { 'label': 'UC Browser', 'pattern': 'UCBrowser' },
       'Opera Mini',
       { 'label': 'Opera Mini', 'pattern': 'OPiOS' },
       'Opera',
       { 'label': 'Opera', 'pattern': 'OPR' },
+      'Chromium',
       'Chrome',
+      { 'label': 'Chrome', 'pattern': '(?:HeadlessChrome)' },
       { 'label': 'Chrome Mobile', 'pattern': '(?:CriOS|CrMo)' },
       { 'label': 'Firefox', 'pattern': '(?:Firefox|Minefield)' },
       { 'label': 'Firefox for iOS', 'pattern': 'FxiOS' },
@@ -17490,6 +17673,11 @@
       { 'label': 'Galaxy S2', 'pattern': 'GT-I9100' },
       { 'label': 'Galaxy S3', 'pattern': 'GT-I9300' },
       { 'label': 'Galaxy S4', 'pattern': 'GT-I9500' },
+      { 'label': 'Galaxy S5', 'pattern': 'SM-G900' },
+      { 'label': 'Galaxy S6', 'pattern': 'SM-G920' },
+      { 'label': 'Galaxy S6 Edge', 'pattern': 'SM-G925' },
+      { 'label': 'Galaxy S7', 'pattern': 'SM-G930' },
+      { 'label': 'Galaxy S7 Edge', 'pattern': 'SM-G935' },
       'Google TV',
       'Lumia',
       'iPad',
@@ -17500,9 +17688,8 @@
       'Nexus',
       'Nook',
       'PlayBook',
-      'PlayStation 3',
-      'PlayStation 4',
       'PlayStation Vita',
+      'PlayStation',
       'TouchPad',
       'Transformer',
       { 'label': 'Wii U', 'pattern': 'WiiU' },
@@ -17515,6 +17702,7 @@
     /* Detectable manufacturers. */
     var manufacturer = getManufacturer({
       'Apple': { 'iPad': 1, 'iPhone': 1, 'iPod': 1 },
+      'Alcatel': {},
       'Archos': {},
       'Amazon': { 'Kindle': 1, 'Kindle Fire': 1 },
       'Asus': { 'Transformer': 1 },
@@ -17523,22 +17711,28 @@
       'Google': { 'Google TV': 1, 'Nexus': 1 },
       'HP': { 'TouchPad': 1 },
       'HTC': {},
+      'Huawei': {},
+      'Lenovo': {},
       'LG': {},
       'Microsoft': { 'Xbox': 1, 'Xbox One': 1 },
       'Motorola': { 'Xoom': 1 },
       'Nintendo': { 'Wii U': 1,  'Wii': 1 },
       'Nokia': { 'Lumia': 1 },
+      'Oppo': {},
       'Samsung': { 'Galaxy S': 1, 'Galaxy S2': 1, 'Galaxy S3': 1, 'Galaxy S4': 1 },
-      'Sony': { 'PlayStation 4': 1, 'PlayStation 3': 1, 'PlayStation Vita': 1 }
+      'Sony': { 'PlayStation': 1, 'PlayStation Vita': 1 },
+      'Xiaomi': { 'Mi': 1, 'Redmi': 1 }
     });
 
     /* Detectable operating systems (order is important). */
     var os = getOS([
       'Windows Phone',
+      'KaiOS',
       'Android',
       'CentOS',
       { 'label': 'Chrome OS', 'pattern': 'CrOS' },
       'Debian',
+      { 'label': 'DragonFly BSD', 'pattern': 'DragonFly' },
       'Fedora',
       'FreeBSD',
       'Gentoo',
@@ -17556,6 +17750,7 @@
       'webOS ',
       'webOS',
       'Tablet OS',
+      'Tizen',
       'Linux',
       'Mac OS X',
       'Macintosh',
@@ -17645,6 +17840,7 @@
         var pattern = guess.pattern || qualify(guess);
         if (!result && (result =
               RegExp('\\b' + pattern + ' *\\d+[.\\w_]*', 'i').exec(ua) ||
+              RegExp('\\b' + pattern + ' *\\w+-[\\w]*', 'i').exec(ua) ||
               RegExp('\\b' + pattern + '(?:; *(?:[a-z]+[_-])?[a-z]+\\d+|[^ ();-]*)', 'i').exec(ua)
             )) {
           // Split by forward slash and append product version if needed.
@@ -17692,9 +17888,26 @@
     // Convert layout to an array so we can add extra details.
     layout && (layout = [layout]);
 
+    // Detect Android products.
+    // Browsers on Android devices typically provide their product IDS after "Android;"
+    // up to "Build" or ") AppleWebKit".
+    // Example:
+    // "Mozilla/5.0 (Linux; Android 8.1.0; Moto G (5) Plus) AppleWebKit/537.36
+    // (KHTML, like Gecko) Chrome/70.0.3538.80 Mobile Safari/537.36"
+    if (/\bAndroid\b/.test(os) && !product &&
+        (data = /\bAndroid[^;]*;(.*?)(?:Build|\) AppleWebKit)\b/i.exec(ua))) {
+      product = trim(data[1])
+        // Replace any language codes (eg. "en-US").
+        .replace(/^[a-z]{2}-[a-z]{2};\s*/i, '')
+        || null;
+    }
     // Detect product names that contain their manufacturer's name.
     if (manufacturer && !product) {
       product = getProduct([manufacturer]);
+    } else if (manufacturer && product) {
+      product = product
+        .replace(RegExp('^(' + qualify(manufacturer) + ')[-_.\\s]', 'i'), manufacturer + ' ')
+        .replace(RegExp('^(' + qualify(manufacturer) + ')[-_.]?(\\w)', 'i'), manufacturer + ' $2');
     }
     // Clean up Google TV.
     if ((data = /\bGoogle TV\b/.exec(product))) {
@@ -17722,7 +17935,7 @@
         : '');
     }
     // Detect Kubuntu.
-    else if (name == 'Konqueror' && !/buntu/i.test(os)) {
+    else if (name == 'Konqueror' && /^Linux\b/i.test(os)) {
       os = 'Kubuntu';
     }
     // Detect Android browsers.
@@ -17741,6 +17954,10 @@
       if (/Accelerated *= *true/i.test(ua)) {
         description.unshift('accelerated');
       }
+    }
+    // Detect UC Browser speed mode.
+    else if (name == 'UC Browser' && /\bUCWEB\b/.test(ua)) {
+      description.push('speed mode');
     }
     // Detect PaleMoon identifying as Firefox.
     else if (name == 'PaleMoon' && (data = /\bFirefox\/([\d.]+)\b/.exec(ua))) {
@@ -17764,10 +17981,14 @@
         name = /[a-z]+(?: Hat)?/i.exec(/\bAndroid\b/.test(os) ? os : data) + ' Browser';
       }
     }
+    // Add Chrome version to description for Electron.
+    else if (name == 'Electron' && (data = (/\bChrome\/([\d.]+)\b/.exec(ua) || 0)[1])) {
+      description.push('Chromium ' + data);
+    }
     // Detect non-Opera (Presto-based) versions (order is important).
     if (!version) {
       version = getVersion([
-        '(?:Cloud9|CriOS|CrMo|Edge|FxiOS|IEMobile|Iron|Opera ?Mini|OPiOS|OPR|Raven|Silk(?!/[\\d.]+$))',
+        '(?:Cloud9|CriOS|CrMo|Edge|Edg|EdgA|EdgiOS|FxiOS|HeadlessChrome|IEMobile|Iron|Opera ?Mini|OPiOS|OPR|Raven|SamsungBrowser|Silk(?!/[\\d.]+$)|UCBrowser|YaBrowser)',
         'Version',
         qualify(name),
         '(?:Firefox|Minefield|NetFront)'
@@ -17796,7 +18017,7 @@
       description.unshift('desktop mode');
       version || (version = (/\brv:([\d.]+)/.exec(ua) || 0)[1]);
     }
-    // Detect IE 11.
+    // Detect IE 11 identifying as other browsers.
     else if (name != 'IE' && layout == 'Trident' && (data = /\brv:([\d.]+)/.exec(ua))) {
       if (name) {
         description.push('identifying as ' + name + (version ? ' ' + version : ''));
@@ -17814,29 +18035,42 @@
           arch = data.getProperty('os.arch');
           os = os || data.getProperty('os.name') + ' ' + data.getProperty('os.version');
         }
-        if (isModuleScope && isHostType(context, 'system') && (data = [context.system])[0]) {
-          os || (os = data[0].os || null);
+        if (rhino) {
           try {
-            data[1] = context.require('ringo/engine').version;
-            version = data[1].join('.');
+            version = context.require('ringo/engine').version.join('.');
             name = 'RingoJS';
           } catch(e) {
-            if (data[0].global.system == context.system) {
+            if ((data = context.system) && data.global.system == context.system) {
               name = 'Narwhal';
+              os || (os = data[0].os || null);
             }
+          }
+          if (!name) {
+            name = 'Rhino';
           }
         }
         else if (
           typeof context.process == 'object' && !context.process.browser &&
           (data = context.process)
         ) {
-          name = 'Node.js';
-          arch = data.arch;
-          os = data.platform;
-          version = /[\d.]+/.exec(data.version)[0];
-        }
-        else if (rhino) {
-          name = 'Rhino';
+          if (typeof data.versions == 'object') {
+            if (typeof data.versions.electron == 'string') {
+              description.push('Node ' + data.versions.node);
+              name = 'Electron';
+              version = data.versions.electron;
+            } else if (typeof data.versions.nw == 'string') {
+              description.push('Chromium ' + version, 'Node ' + data.versions.node);
+              name = 'NW.js';
+              version = data.versions.nw;
+            }
+          }
+          if (!name) {
+            name = 'Node.js';
+            arch = data.arch;
+            os = data.platform;
+            version = /[\d.]+/.exec(data.version);
+            version = version ? version[0] : null;
+          }
         }
       }
       // Detect Adobe AIR.
@@ -17861,6 +18095,14 @@
         }
         version = name == 'IE' ? String(version[1].toFixed(1)) : version[0];
       }
+      // Detect IE 11 masking as other browsers.
+      else if (typeof doc.documentMode == 'number' && /^(?:Chrome|Firefox)\b/.test(name)) {
+        description.push('masking as ' + name + ' ' + version);
+        name = 'IE';
+        version = '11.0';
+        layout = ['Trident'];
+        os = 'Windows';
+      }
       os = os && format(os);
     }
     // Detect prerelease phases.
@@ -17874,7 +18116,7 @@
         (prerelease == 'beta' ? beta : alpha) + (/\d+\+?/.exec(data) || '');
     }
     // Detect Firefox Mobile.
-    if (name == 'Fennec' || name == 'Firefox' && /\b(?:Android|Firefox OS)\b/.test(os)) {
+    if (name == 'Fennec' || name == 'Firefox' && /\b(?:Android|Firefox OS|KaiOS)\b/.test(os)) {
       name = 'Firefox Mobile';
     }
     // Obscure Maxthon's unreliable version.
@@ -17883,7 +18125,9 @@
     }
     // Detect Xbox 360 and Xbox One.
     else if (/\bXbox\b/i.test(product)) {
-      os = null;
+      if (product == 'Xbox 360') {
+        os = null;
+      }
       if (product == 'Xbox 360' && /\bIEMobile\b/.test(ua)) {
         description.unshift('mobile mode');
       }
@@ -17894,8 +18138,14 @@
       name += ' Mobile';
     }
     // Detect IE platform preview.
-    else if (name == 'IE' && useFeatures && context.external === null) {
-      description.unshift('platform preview');
+    else if (name == 'IE' && useFeatures) {
+      try {
+        if (context.external === null) {
+          description.unshift('platform preview');
+        }
+      } catch(e) {
+        description.unshift('embedded');
+      }
     }
     // Detect BlackBerry OS version.
     // http://docs.blackberry.com/en/developers/deliverables/18169/HTTP_headers_sent_by_BB_Browser_1234911_11.jsp
@@ -17962,7 +18212,7 @@
         version = null;
       }
       // Use the full Chrome version when available.
-      data[1] = (/\bChrome\/([\d.]+)/i.exec(ua) || 0)[1];
+      data[1] = (/\b(?:Headless)?Chrome\/([\d.]+)/i.exec(ua) || 0)[1];
       // Detect Blink layout engine.
       if (data[0] == 537.36 && data[2] == 537.36 && parseFloat(data[1]) >= 28 && layout == 'WebKit') {
         layout = ['Blink'];
@@ -17971,7 +18221,7 @@
       // http://stackoverflow.com/questions/6768474/how-can-i-detect-which-javascript-engine-v8-or-jsc-is-used-at-runtime-in-androi
       if (!useFeatures || (!likeChrome && !data[1])) {
         layout && (layout[1] = 'like Safari');
-        data = (data = data[0], data < 400 ? 1 : data < 500 ? 2 : data < 526 ? 3 : data < 533 ? 4 : data < 534 ? '4+' : data < 535 ? 5 : data < 537 ? 6 : data < 538 ? 7 : data < 601 ? 8 : '8');
+        data = (data = data[0], data < 400 ? 1 : data < 500 ? 2 : data < 526 ? 3 : data < 533 ? 4 : data < 534 ? '4+' : data < 535 ? 5 : data < 537 ? 6 : data < 538 ? 7 : data < 601 ? 8 : data < 602 ? 9 : data < 604 ? 10 : data < 606 ? 11 : data < 608 ? 12 : '12');
       } else {
         layout && (layout[1] = 'like Chrome');
         data = data[1] || (data = data[0], data < 530 ? 1 : data < 532 ? 2 : data < 532.05 ? 3 : data < 533 ? 4 : data < 534.03 ? 5 : data < 534.07 ? 6 : data < 534.10 ? 7 : data < 534.13 ? 8 : data < 534.16 ? 9 : data < 534.24 ? 10 : data < 534.30 ? 11 : data < 535.01 ? 12 : data < 535.02 ? '13+' : data < 535.07 ? 15 : data < 535.11 ? 16 : data < 535.19 ? 17 : data < 536.05 ? 18 : data < 536.10 ? 19 : data < 537.01 ? 20 : data < 537.11 ? '21+' : data < 537.13 ? 23 : data < 537.18 ? 24 : data < 537.24 ? 25 : data < 537.36 ? 26 : layout != 'Blink' ? '27' : '28');
@@ -17981,6 +18231,8 @@
       // Obscure version for some Safari 1-2 releases.
       if (name == 'Safari' && (!version || parseInt(version) > 45)) {
         version = data;
+      } else if (name == 'Chrome' && /\bHeadlessChrome/i.test(ua)) {
+        description.unshift('headless');
       }
     }
     // Detect Opera desktop modes.
@@ -18008,16 +18260,24 @@
         os = null;
       }
     }
+    // Newer versions of SRWare Iron uses the Chrome tag to indicate its version number.
+    else if (/\bSRWare Iron\b/.test(name) && !version) {
+      version = getVersion('Chrome');
+    }
     // Strip incorrect OS versions.
     if (version && version.indexOf((data = /[\d.]+$/.exec(os))) == 0 &&
         ua.indexOf('/' + data + '-') > -1) {
       os = trim(os.replace(data, ''));
     }
+    // Ensure OS does not include the browser name.
+    if (os && os.indexOf(name) != -1 && !RegExp(name + ' OS').test(os)) {
+      os = os.replace(RegExp(' *' + qualify(name) + ' *'), '');
+    }
     // Add layout engine.
     if (layout && !/\b(?:Avant|Nook)\b/.test(name) && (
         /Browser|Lunascape|Maxthon/.test(name) ||
         name != 'Safari' && /^iOS/.test(os) && /\bSafari\b/.test(layout[1]) ||
-        /^(?:Adobe|Arora|Breach|Midori|Opera|Phantom|Rekonq|Rock|Sleipnir|Web)/.test(name) && layout[1])) {
+        /^(?:Adobe|Arora|Breach|Midori|Opera|Phantom|Rekonq|Rock|Samsung Internet|Sleipnir|SRWare Iron|Vivaldi|Web)/.test(name) && layout[1])) {
       // Don't add layout details to description if they are falsey.
       (data = layout[layout.length - 1]) && description.push(data);
     }
@@ -18091,6 +18351,9 @@
     /**
      * The name of the browser's layout engine.
      *
+     * The list of common layout engines include:
+     * "Blink", "EdgeHTML", "Gecko", "Trident" and "WebKit"
+     *
      * @memberOf platform
      * @type string|null
      */
@@ -18099,6 +18362,11 @@
     /**
      * The name of the product's manufacturer.
      *
+     * The list of manufacturers include:
+     * "Apple", "Archos", "Amazon", "Asus", "Barnes & Noble", "BlackBerry",
+     * "Google", "HP", "HTC", "LG", "Microsoft", "Motorola", "Nintendo",
+     * "Nokia", "Samsung" and "Sony"
+     *
      * @memberOf platform
      * @type string|null
      */
@@ -18106,6 +18374,14 @@
 
     /**
      * The name of the browser/environment.
+     *
+     * The list of common browser names include:
+     * "Chrome", "Electron", "Firefox", "Firefox for iOS", "IE",
+     * "Microsoft Edge", "PhantomJS", "Safari", "SeaMonkey", "Silk",
+     * "Opera Mini" and "Opera"
+     *
+     * Mobile versions of some browsers have "Mobile" appended to their name:
+     * eg. "Chrome Mobile", "Firefox Mobile", "IE Mobile" and "Opera Mobile"
      *
      * @memberOf platform
      * @type string|null
@@ -18122,6 +18398,11 @@
 
     /**
      * The name of the product hosting the browser.
+     *
+     * The list of common products include:
+     *
+     * "BlackBerry", "Galaxy S4", "Lumia", "iPad", "iPod", "iPhone", "Kindle",
+     * "Kindle Fire", "Nexus", "Nook", "PlayBook", "TouchPad" and "Transformer"
      *
      * @memberOf platform
      * @type string|null
@@ -18165,8 +18446,8 @@
        *
        * Common values include:
        * "Windows", "Windows Server 2008 R2 / 7", "Windows Server 2008 / Vista",
-       * "Windows XP", "OS X", "Ubuntu", "Debian", "Fedora", "Red Hat", "SuSE",
-       * "Android", "iOS" and "Windows Phone"
+       * "Windows XP", "OS X", "Linux", "Ubuntu", "Debian", "Fedora", "Red Hat",
+       * "SuSE", "Android", "iOS" and "Windows Phone"
        *
        * @memberOf platform.os
        * @type string|null
@@ -21072,28 +21353,28 @@
  */
 (function (window, document) {
   /** Cache of error messages */
-  var errors = [];
+  const errors = [];
 
   /** Cache of event handlers */
-  var handlers = {};
+  const handlers = {};
 
   /** A flag to indicate that the page has loaded */
-  var pageLoaded = false;
+  let pageLoaded = false;
 
   /** Benchmark results element id prefix (e.g. `results-1`) */
-  var prefix = 'results-';
+  const prefix = 'results-';
 
   /** The element responsible for scrolling the page (assumes ui.js is just before </body>) */
-  var scrollEl = document.body;
+  let scrollEl = document.body;
 
   /** Used to resolve a value's internal [[Class]] */
-  var toString = {}.toString;
+  const toString = {}.toString;
 
   /** Namespace */
-  var ui = new Benchmark.Suite();
+  const ui = new Benchmark.Suite();
 
   /** Object containing various CSS class names */
-  var classNames = {
+  const classNames = {
     // used for error styles
     'error': 'error',
     // used to make content visible
@@ -21103,7 +21384,7 @@
   };
 
   /** Used to flag environments/features */
-  var has = {
+  const has = {
     // used for pre-populating form fields
     'localStorage': !!(function () {
       try {
@@ -21115,7 +21396,7 @@
   };
 
   /** Object containing various text messages */
-  var texts = {
+  const texts = {
     // inner text for the various run button states
     'run': {
       'again': 'Run again',
@@ -21130,15 +21411,15 @@
   };
 
   /** The options object for Benchmark.Suite#run */
-  var runOptions = {
+  const runOptions = {
     'async': true,
     'queued': true
   };
 
   /** API shortcuts */
-  var filter = Benchmark.filter;
-  var formatNumber = Benchmark.formatNumber;
-  var join = Benchmark.join;
+  const filter = Benchmark.filter;
+  const formatNumber = Benchmark.formatNumber;
+  const join = Benchmark.join;
 
   /* ------------------------------------------------------------------------ */
 
@@ -21149,13 +21430,13 @@
      *
      * @private
      */
-    'cycle': function () {
-      var bench = this;
-      var size = bench.stats.sample.length;
+    'cycle' () {
+      const bench = this;
+      const size = bench.stats.sample.length;
 
       if (!bench.aborted) {
-        setStatus(bench.name + ' &times; ' + formatNumber(bench.count) + ' (' +
-          size + ' sample' + (size === 1 ? '' : 's') + ')');
+        setStatus(`${bench.name  } &times; ${  formatNumber(bench.count)  } (${ 
+          size  } sample${  size === 1 ? '' : 's'  })`);
       }
     },
 
@@ -21164,7 +21445,7 @@
      *
      * @private
      */
-    'start': function () {
+    'start' () {
       // call user provided init() function
       if (isFunction(window.init)) {
         init(); // eslint-disable-line no-undef
@@ -21179,14 +21460,14 @@
      *
      * @private
      */
-    'run': function () {
-      var stopped = !ui.running;
+    'run' () {
+      const stopped = !ui.running;
       ui.abort();
       ui.length = 0;
 
       if (stopped) {
         logError({ 'clear': true });
-        ui.push.apply(ui, _.filter(ui.benchmarks, function (bench) {
+        ui.push.apply(ui, _.filter(ui.benchmarks, (bench) => {
           return !bench.error && bench.reset();
         }));
         ui.run(runOptions);
@@ -21202,17 +21483,17 @@
      * @private
      * @param {Object} event The event object.
      */
-    'click': function (event) {
+    'click' (event) {
       event || (event = window.event);
 
-      var id;
-      var index;
-      var target = event.target || event.srcElement;
+      let id;
+      let index;
+      let target = event.target || event.srcElement;
 
       while (target && !(id = target.id)) {
         target = target.parentNode;
       }
-      index = id && --id.split('-')[1] || 0;
+      index = (id && --id.split('-')[1]) || 0;
       ui.push(ui.benchmarks[index].reset());
       ui.running ? ui.render(index) : ui.run(runOptions);
     },
@@ -21223,7 +21504,7 @@
      * @private
      * @param {Object} event The event object.
      */
-    'keyup': function (event) {
+    'keyup' (event) {
       if ((event || window.event).keyCode === 13) {
         handlers.title.click(event);
       }
@@ -21237,23 +21518,13 @@
      *
      * @private
      */
-    'hashchange': function () {
+    'hashchange' () {
       ui.parseHash();
 
-      var scrollTop;
-      var params = ui.params;
-      var chart = params.chart;
-      var filterBy = params.filterby;
+      let scrollTop;
+      const params = ui.params;
 
       if (pageLoaded) {
-        // configure browserscope
-        ui.browserscope.postable = has.runner && !('nopost' in params);
-
-        // configure chart renderer
-        if (chart || filterBy) {
-          scrollTop = $('results').offsetTop;
-          ui.browserscope.render({ 'chart': chart, 'filterBy': filterBy });
-        }
         if (has.runner) {
           // call user provided init() function
           if (isFunction(window.init)) {
@@ -21277,7 +21548,7 @@
      *
      * @private
      */
-    'load': function () {
+    'load' () {
       // only for test pages
       if (has.runner) {
         // init the ui
@@ -21299,7 +21570,7 @@
       ui.length = 0;
 
       // evaluate hash values after all other "load" events have fired
-      _.defer(function () {
+      _.defer(() => {
         pageLoaded = true;
         handlers.window.hashchange();
       });
@@ -21348,7 +21619,7 @@
       if (typeof element.addEventListener !== 'undefined') {
         element.addEventListener(eventName, handler, false);
       } else if (typeof element.attachEvent !== 'undefined') {
-        element.attachEvent('on' + eventName, handler);
+        element.attachEvent(`on${  eventName}`, handler);
       }
     }
     return element;
@@ -21390,7 +21661,7 @@
    */
   function hasClass (element, className) {
     return !!(element = $(element)) &&
-      (' ' + element.className + ' ').indexOf(' ' + className + ' ') > -1;
+      (` ${  element.className  } `).indexOf(` ${  className  } `) > -1;
   }
 
   /**
@@ -21440,9 +21711,9 @@
    * @param {string|Object} text The text to append or options object.
    */
   function logError (text) {
-    var table;
-    var div = $('error-info');
-    var options = {};
+    let table;
+    let div = $('error-info');
+    let options = {};
 
     // juggle arguments
     if (typeof text === 'object' && text) {
@@ -21488,17 +21759,17 @@
    * @returns {Object} The suite instance.
    */
   function parseHash () {
-    var me = this;
-    var hashes = window.location.hash.slice(1).split('&');
-    var params = me.params || (me.params = {});
+    const me = this;
+    const hashes = window.location.hash.slice(1).split('&');
+    const params = me.params || (me.params = {});
 
     // remove old params
-    _.forOwn(params, function (value, key) {
+    _.forOwn(params, (value, key) => {
       delete params[key];
     });
 
     // add new params
-    _.each(hashes[0] && hashes, function (value) {
+    _.each(hashes[0] && hashes, (value) => {
       value = value.split('=');
       params[value[0].toLowerCase()] = (value[1] || '').toLowerCase();
     });
@@ -21514,11 +21785,11 @@
    * @returns {Object} The suite instance.
    */
   function render (index) {
-    _.each(index == null ? (index = 0, ui.benchmarks) : [ui.benchmarks[index]], function (bench) {
-      var parsed;
-      var cell = $(prefix + (++index));
-      var error = bench.error;
-      var hz = bench.hz;
+    _.each(index == null ? (index = 0, ui.benchmarks) : [ui.benchmarks[index]], (bench) => {
+      let parsed;
+      const cell = $(prefix + (++index));
+      const error = bench.error;
+      const hz = bench.hz;
 
       // reset title and class
       cell.title = '';
@@ -21529,7 +21800,7 @@
         setHTML(cell, 'Error');
         addClass(cell, classNames.error);
         parsed = join(error, '</li><li>');
-        logError('<p>' + error + '.</p>' + (parsed ? '<ul><li>' + parsed + '</li></ul>' : ''));
+        logError(`<p>${  error  }.</p>${  parsed ? `<ul><li>${  parsed  }</li></ul>` : ''}`);
       } else {
         // status: running
         if (bench.running) {
@@ -21539,10 +21810,10 @@
           if (ui.running) {
             setHTML(cell, 'completed');
           } else {
-            cell.title = 'Ran ' + formatNumber(bench.count) + ' times in ' +
-              bench.times.cycle.toFixed(3) + ' seconds.';
-            setHTML(cell, formatNumber(hz.toFixed(hz < 100 ? 2 : 0)) +
-              ' <small>&plusmn;' + bench.stats.rme.toFixed(2) + '%</small>');
+            cell.title = `Ran ${  formatNumber(bench.count)  } times in ${ 
+              bench.times.cycle.toFixed(3)  } seconds.`;
+            setHTML(cell, `${formatNumber(hz.toFixed(hz < 100 ? 2 : 0)) 
+              } <small>&plusmn;${  bench.stats.rme.toFixed(2)  }%</small>`);
           }
         } else {
           // status: pending
@@ -21559,11 +21830,11 @@
 
   /* ------------------------------------------------------------------------ */
 
-  ui.on('add', function (event) {
-    var bench = event.target;
-    var index = ui.benchmarks.length;
-    var id = index + 1;
-    var title = $('title-' + id);
+  ui.on('add', (event) => {
+    const bench = event.target;
+    const index = ui.benchmarks.length;
+    const id = index + 1;
+    const title = $(`title-${  id}`);
 
     ui.benchmarks.push(bench);
 
@@ -21579,51 +21850,49 @@
       ui.render(index);
     }
   })
-  .on('start cycle', function () {
-    ui.render();
-    setHTML('run', texts.run.running);
-  })
-  .on('complete', function () {
-    var benches = filter(ui.benchmarks, 'successful');
-    var fastest = filter(benches, 'fastest');
-    var slowest = filter(benches, 'slowest');
+    .on('start cycle', () => {
+      ui.render();
+      setHTML('run', texts.run.running);
+    })
+    .on('complete', () => {
+      const benches = filter(ui.benchmarks, 'successful');
+      const fastest = filter(benches, 'fastest');
+      const slowest = filter(benches, 'slowest');
 
-    ui.render();
-    setHTML('run', texts.run.again);
-    setStatus(texts.status.again);
+      ui.render();
+      setHTML('run', texts.run.again);
+      setStatus(texts.status.again);
 
-    // highlight result cells
-    _.each(benches, function (bench) {
-      var cell = $(prefix + (_.indexOf(ui.benchmarks, bench) + 1));
-      var fastestHz = getHz(fastest[0]);
-      var hz = getHz(bench);
-      var percent = (1 - (hz / fastestHz)) * 100;
-      var span = cell.getElementsByTagName('span')[0];
-      var text = 'fastest';
+      // highlight result cells
+      _.each(benches, (bench) => {
+        const cell = $(prefix + (_.indexOf(ui.benchmarks, bench) + 1));
+        const fastestHz = getHz(fastest[0]);
+        const hz = getHz(bench);
+        const percent = (1 - (hz / fastestHz)) * 100;
+        const span = cell.getElementsByTagName('span')[0];
+        let text = 'fastest';
 
-      if (_.indexOf(fastest, bench) > -1) {
+        if (_.indexOf(fastest, bench) > -1) {
         // mark fastest
-        addClass(cell, text);
-      } else {
-        text = isFinite(hz)
-          ? formatNumber(percent < 1 ? percent.toFixed(2) : Math.round(percent)) + '% slower'
-          : '';
+          addClass(cell, text);
+        } else {
+          text = isFinite(hz)
+            ? `${formatNumber(percent < 1 ? percent.toFixed(2) : Math.round(percent))  }% slower`
+            : '';
 
-        // mark slowest
-        if (_.indexOf(slowest, bench) > -1) {
-          addClass(cell, 'slowest');
+          // mark slowest
+          if (_.indexOf(slowest, bench) > -1) {
+            addClass(cell, 'slowest');
+          }
         }
-      }
-      // write ranking
-      if (span) {
-        setHTML(span, text);
-      } else {
-        appendHTML(cell, '<span>' + text + '</span>');
-      }
+        // write ranking
+        if (span) {
+          setHTML(span, text);
+        } else {
+          appendHTML(cell, `<span>${  text  }</span>`);
+        }
+      });
     });
-
-    ui.browserscope.post();
-  });
 
   /* ------------------------------------------------------------------------ */
 
@@ -21666,54 +21935,18 @@
   // parse location hash string
   ui.parseHash();
 
-  // provide a simple UI for toggling between chart types and filtering results
-  // (assumes ui.js is just before </body>)
-  (function () {
-    var sibling = $('bs-results');
-    var p = createElement('p');
-
-    p.innerHTML =
-      '<span id=charts><strong>Chart type:</strong> <a href=#>bar</a>, ' +
-      '<a href=#>column</a>, <a href=#>line</a>, <a href=#>pie</a>, ' +
-      '<a href=#>table</a></span><br>' +
-      '<span id=filters><strong>Filter:</strong> <a href=#>popular</a>, ' +
-      '<a href=#>all</a>, <a href=#>desktop</a>, <a href=#>family</a>, ' +
-      '<a href=#>major</a>, <a href=#>minor</a>, <a href=#>mobile</a>, ' +
-      '<a href=#>prerelease</a></span>';
-
-    sibling.parentNode.insertBefore(p, sibling);
-
-    // use DOM0 event handler to simplify canceling the default action
-    $('charts').onclick =
-    $('filters').onclick = function (event) {
-      event || (event = window.event);
-      var target = event.target || event.srcElement;
-      if (target.href || (target = target.parentNode).href) {
-        ui.browserscope.render(
-          target.parentNode.id === 'charts'
-            ? { 'chart': target.innerHTML }
-            : { 'filterBy': target.innerHTML }
-        );
-      }
-      // cancel the default action
-      return false;
-    };
-  }());
-
-  /* ------------------------------------------------------------------------ */
-
   // fork for runner or embedded chart
   if (has.runner) {
     // detect the scroll element
     (function () {
-      var scrollTop;
-      var div = document.createElement('div');
-      var body = document.body;
-      var bodyStyle = body.style;
-      var bodyHeight = bodyStyle.height;
-      var html = document.documentElement;
-      var htmlStyle = html.style;
-      var htmlHeight = htmlStyle.height;
+      let scrollTop;
+      const div = document.createElement('div');
+      const body = document.body;
+      const bodyStyle = body.style;
+      const bodyHeight = bodyStyle.height;
+      const html = document.documentElement;
+      const htmlStyle = html.style;
+      const htmlHeight = htmlStyle.height;
 
       bodyStyle.height = htmlStyle.height = 'auto';
       div.style.cssText = 'display:block;height:9001px;';
@@ -21732,1105 +21965,23 @@
 
     // catch and display errors from the "preparation code"
     window.onerror = function (message, fileName, lineNumber) {
-      logError('<p>' + message + '.</p><ul><li>' + join({
-        'message': message,
-        'fileName': fileName,
-        'lineNumber': lineNumber
-      }, '</li><li>') + '</li></ul>');
+      logError(`<p>${  message  }.</p><ul><li>${  join({
+        message,
+        fileName,
+        lineNumber
+      }, '</li><li>')  }</li></ul>`);
       scrollEl.scrollTop = $('error-info').offsetTop;
     };
   } else {
     // short circuit unusable methods
     ui.render = function () {};
     ui.off('start cycle complete');
-    setTimeout(function () {
+    setTimeout(() => {
       ui.off();
-      ui.browserscope.post = function () {};
       _.invokeMap(ui.benchmarks, 'off');
     }, 1);
   }
 
   /* ------------------------------------------------------------------------ */
-}(this, document));
-
-(function(window, document) {
-
-  /** Cache used by various methods */
-  var cache = {
-    'counter': 0,
-    'lastAction': 'load',
-    'lastChart': 'bar',
-    'lastFilterBy': 'all',
-    'responses': { /* 'all': null, 'desktop': null, 'major': null, ... */ },
-    'timers': { /* 'load': null, 'post': null, ... */ }
-  };
-
-  /**
-   * Used to filter Browserscope results by browser category.
-   *
-   * @see https://www.browserscope.org/user/tests/howto#urlparams
-   */
-  var filterMap = {
-    'all': 3,
-    'desktop': 'top-d',
-    'family': 0,
-    'major': 1,
-    'minor': 2,
-    'mobile': 'top-m',
-    'popular': 'top',
-    'prerelease': 'top-d-e'
-  };
-
-  /**
-   * The doctype used in the creation of iframes so Browserscope
-   * detects the correct IE compat mode.
-   */
-  var doctype = /css/i.test(document.compatMode) ? '<!doctype html>' : '';
-
-  /**
-   * The `uaToken` is prepended to the value of the data cell of the Google
-   * visualization data table object that matches the user's browser name. After
-   * the chart is rendered the element containing the `uaToken` is assigned the
-   * `ui.browserscope.uaClass` class name to allow for the creation of a visual
-   * indicator to help the user more easily find their browser's results.
-   */
-  var uaToken = '\u2028';
-
-  /** Math shortcuts */
-  var floor = Math.floor,
-      max = Math.max,
-      min = Math.min;
-
-  /** Utility shortcuts */
-  var filter = Benchmark.filter,
-      formatNumber = Benchmark.formatNumber;
-
-  /*--------------------------------------------------------------------------*/
-
-  /**
-   * Registers an event listener.
-   *
-   * @private
-   * @param {Element} element The element.
-   * @param {string} eventName The name of the event to listen to.
-   * @param {Function} handler The event handler.
-   * @returns {Element} The element.
-   */
-  function addListener(element, eventName, handler) {
-    if ((element = typeof element == 'string' ? query(element)[0] : element)) {
-      if (typeof element.addEventListener != 'undefined') {
-        element.addEventListener(eventName, handler, false);
-      } else if (typeof element.attachEvent != 'undefined') {
-        element.attachEvent('on' + eventName, handler);
-      }
-    }
-    return element;
-  }
-
-  /**
-   * Shortcut for `document.createElement()`.
-   *
-   * @private
-   * @param {string} tagName The tag name of the element to create.
-   * @param {string} name A name to assign to the element.
-   * @param {Document|Element} context The document object used to create the element.
-   * @returns {Element} Returns a new element.
-   */
-  function createElement(tagName, name, context) {
-    var result;
-    name && name.nodeType && (context = name, name = '');
-    context =  context ? context.ownerDocument || context : document;
-    name || (name = '');
-
-    try {
-      // set name attribute for IE6/7
-      result = context.createElement('<' + tagName + ' name="' + name + '">');
-    } catch(e) {
-      (result = context.createElement(tagName)).name = name;
-    }
-    return result;
-  }
-
-  /**
-   * Creates a new style element.
-   *
-   * @private
-   * @param {string} cssText The css text of the style element.
-   * @param {Document|Element} context The document object used to create the element.
-   * @returns {Element} Returns the new style element.
-   */
-  function createStyleSheet(cssText, context) {
-    // use a text node, "x", to work around innerHTML issues with style elements
-    // https://msdn.microsoft.com/en-us/library/ms533897.aspx
-    var div = createElement('div', context);
-    div.innerHTML = 'x<style>' + cssText + '</style>';
-    return div.lastChild;
-  }
-
-  /**
-   * Gets the text content of an element.
-   *
-   * @private
-   * @param {Element} element The element.
-   * @param {Document|Element} context The element whose descendants are queried.
-   * @returns {string} The text content of the element.
-   */
-  function getText(element, context) {
-    element = query(element, context)[0];
-    return element && (element.textContent || element.innerText) || '';
-  }
-
-  /**
-   * Injects a script into the document.
-   *
-   * @private
-   * @param {string} src The external script source.
-   * @param {Object} sibling The element to inject the script after.
-   * @param {Document} context The document object used to create the script element.
-   * @returns {Object} The new script element.
-   */
-  function loadScript(src, sibling, context) {
-    if (sibling) {
-      context = sibling.ownerDocument;
-      if (!context) {
-        context = sibling;
-        sibling = query('script', context).pop();
-      }
-    }
-    if (!sibling) {
-      sibling = query('*', context).pop();
-    }
-    var script = createElement('script', context);
-    script.src = src;
-    return sibling.parentNode.insertBefore(script, sibling.nextSibling);
-  }
-
-  /**
-   * Queries the document for elements by id or tagName.
-   *
-   * @private
-   * @param {string} selector The css selector to match.
-   * @param {Document|Element} context The element whose descendants are queried.
-   * @returns {Array} The array of results.
-   */
-  function query(selector, context) {
-    var result = [];
-    selector || (selector = '');
-    context = typeof context == 'string' ? query(context)[0] : context || document;
-
-    if (selector.nodeType) {
-      result = [selector];
-    }
-    else if (context) {
-      _.each(selector.split(','), function(selector) {
-        _.each(/^#/.test(selector)
-            ? [context.getElementById(selector.slice(1))]
-            : context.getElementsByTagName(selector), function(node) {
-          result.push(node);
-        });
-      });
-    }
-    return result;
-  }
-
-  /**
-   * Set an element's innerHTML property.
-   *
-   * @private
-   * @param {Element} element The element.
-   * @param {string} html The HTML to set.
-   * @param {Object} object The template object used to modify the html.
-   * @returns {Element} The element.
-   */
-  function setHTML(element, html, object) {
-    if ((element = query(element)[0])) {
-      element.innerHTML = _.template(html)(object || {});
-    }
-    return element;
-  }
-
-  /**
-   * Displays a message in the "results" element.
-   *
-   * @private
-   * @param {string} text The text to display.
-   * @param {Object} object The template object used to modify the text.
-   */
-  function setMessage(text, object) {
-    var me = ui.browserscope,
-        cont = me.container;
-
-    if (cont) {
-      cont.className = 'bs-rt-message';
-      setHTML(cont, text, object);
-    }
-  }
-
-  /*--------------------------------------------------------------------------*/
-
-  /**
-   * Adds a style sheet to the current chart and assigns the `ui.browserscope.uaClass`
-   * class name to the chart element containing the user's browser name.
-   *
-   * @private
-   * @returns {boolean} Returns `true` if the operation succeeded, else `false`.
-   */
-  function addChartStyle() {
-    var me = ui.browserscope,
-        cssText = [],
-        uaClass = me.uaClass;
-
-    var win = me.chartWindow,
-        doc = win.document,
-        iframe = query('iframe', me.container)[0];
-
-    // the chart container may be an iframe in older browsers
-    var chartContainer = iframe
-      ? win.frames[iframe.name].document
-      : query('#bs-chart', doc)[0];
-
-    var chartNodes = query('text,textpath', chartContainer),
-        context = iframe ? chartContainer : doc,
-        result = false;
-
-    if (iframe && chartNodes.length) {
-      // extract CSS rules for `uaClass`
-      _.each(query('link,style', doc), function(node) {
-        // avoid access denied errors on external style sheets
-        // outside the same origin policy
-        try {
-          var sheet = node.sheet || node.styleSheet;
-          _.each(sheet.cssRules || sheet.rules, function(rule) {
-            if ((rule.selectorText || rule.cssText).indexOf('.' + uaClass) > -1) {
-              cssText.push(rule.style && rule.style.cssText || /[^{}]*(?=})/.exec(rule.cssText) || '');
-            }
-          });
-        } catch(e) {}
-      });
-      // insert custom style sheet
-      query('head', context)[0].appendChild(
-        createStyleSheet('.' + uaClass + '{' + cssText.join(';') + '}', context));
-    }
-    // scan chart elements for a match
-    _.some(chartNodes, function(node) {
-      var nextSibling;
-      if ((node.string || getText(node)).charAt(0) != uaToken) {
-        return false;
-      }
-      // for VML
-      if (node.string) {
-        // IE requires reinserting the element to render correctly
-        node.className = uaClass;
-        nextSibling = node.nextSibling;
-        node.parentNode.insertBefore(node.removeNode(), nextSibling);
-      }
-      // for SVG
-      else {
-        node.setAttribute('class', uaClass);
-      }
-      return (result = true);
-    });
-
-    return result;
-  }
-
-  /**
-   * A simple data object cloning utility.
-   *
-   * @private
-   * @param {Mixed} data The data object to clone.
-   * @returns {Mixed} The cloned data object.
-   */
-  function cloneData(data) {
-    var fn,
-        ctor,
-        result = data;
-
-    if (_.isArray(data)) {
-      result = _.map(data, cloneData);
-    }
-    else if (data === Object(data)) {
-      ctor = data.constructor;
-      result = ctor == Object ? {} : (fn = function(){}, fn.prototype = ctor.prototype, new fn);
-      _.forOwn(data, function(value, key) {
-        result[key] = cloneData(value);
-      });
-    }
-    return result;
-  }
-
-  /**
-   * Creates a Browserscope results object.
-   *
-   * @private
-   * @returns {Object|null} Browserscope results object or null.
-   */
-  function createSnapshot() {
-    // clone benches, exclude those that are errored, unrun, or have hz of Infinity
-    var benches = _.invokeMap(filter(ui.benchmarks, 'successful'), 'clone'),
-        fastest = filter(benches, 'fastest'),
-        slowest = filter(benches, 'slowest');
-
-    var neither = _.filter(benches, function(bench) {
-      return _.indexOf(fastest, bench) + _.indexOf(slowest, bench) == -2;
-    });
-
-    function merge(destination, source) {
-      destination.count = source.count;
-      destination.cycles = source.cycles;
-      destination.hz = source.hz;
-      destination.stats = _.extend({}, source.stats);
-    }
-
-    // normalize results on slowest in each category
-    _.each(fastest.concat(slowest), function(bench) {
-      merge(bench, _.indexOf(fastest, bench) > -1 ? fastest[fastest.length - 1] : slowest[0]);
-    });
-
-    // sort slowest to fastest
-    // (a larger `mean` indicates a slower benchmark)
-    neither.sort(function(a, b) {
-      a = a.stats; b = b.stats;
-      return (a.mean + a.moe > b.mean + b.moe) ? -1 : 1;
-    });
-
-    // normalize the leftover benchmarks
-    _.reduce(neither, function(prev, bench) {
-      // if the previous slower benchmark is indistinguishable from
-      // the current then use the previous benchmark's values
-      if (prev.compare(bench) == 0) {
-        merge(bench, prev);
-      }
-      return bench;
-    });
-
-    // append benchmark ids for duplicate names or names with no alphanumeric/space characters
-    // and use the upper limit of the confidence interval to compute a lower hz
-    // to avoid recording inflated results caused by a high margin or error
-    return _.reduce(benches, function(result, bench, key) {
-      var stats = bench.stats;
-      result || (result = {});
-      key = toLabel(bench.name);
-      result[key && !_.has(result, key) ? key : key + bench.id ] = floor(1 / (stats.mean + stats.moe));
-      return result;
-    }, null);
-  }
-
-  /**
-   * Retrieves the "cells" array from a given Google visualization data row object.
-   *
-   * @private
-   * @param {Object} object The data row object.
-   * @returns {Array} An array of cell objects.
-   */
-  function getDataCells(object) {
-    // resolve cells by duck typing because of munged property names
-    var result = [];
-    _.forOwn(object, function(value) {
-      return !(_.isArray(value) && (result = value));
-    });
-    // remove empty entries which occur when not all the tests are recorded
-    return _.compact(result);
-  }
-
-  /**
-   * Retrieves the "labels" array from a given Google visualization data table object.
-   *
-   * @private
-   * @param {Object} object The data table object.
-   * @returns {Array} An array of label objects.
-   */
-  function getDataLabels(object) {
-    var result = [],
-        labelMap = {};
-
-    // resolve labels by duck typing because of munged property names
-    _.forOwn(object, function(value) {
-      return !(_.isArray(value) && 0 in value && 'type' in value[0] && (result = value));
-    });
-    // create a data map of labels to names
-    _.each(ui.benchmarks, function(bench) {
-      var key = toLabel(bench.name);
-      labelMap[key && !_.has(labelMap, key) ? key : key + bench.id ] = bench.name;
-    });
-    // replace Browserscope's basic labels with benchmark names
-    return _.each(result, function(cell) {
-      var name = labelMap[cell.label];
-      name && (cell.label = name);
-    });
-  }
-
-  /**
-   * Retrieves the "rows" array from a given Google visualization data table object.
-   *
-   * @private
-   * @param {Object} object The data table object.
-   * @returns {Array} An array of row objects.
-   */
-  function getDataRows(object) {
-    var name,
-        me = ui.browserscope,
-        filterBy = cache.lastFilterBy,
-        bsUa = query('#bs-ua', me.chartWindow.document)[0],
-        browserName = toBrowserName(getText(query('strong', bsUa)[0]), filterBy),
-        uaClass = me.uaClass,
-        result = [];
-
-    // resolve rows by duck typing because of munged property names
-    _.forOwn(object, function(value, key) {
-      return !(_.isArray(value) && 0 in value && !('type' in value[0]) && (name = key, result = value));
-    });
-    // remove empty rows and set the `p.className` on the browser
-    // name cell that matches the user's browser name
-    if (result.length) {
-      result = object[name] = _.filter(result, function(value) {
-        var cells = getDataCells(value),
-            first = cells[0],
-            second = cells[1];
-
-        // cells[0] is the browser name cell so instead we check cells[1]
-        // for the presence of ops/sec data to determine if a row is empty or not
-        if (first && second && second.f) {
-          delete first.p.className;
-          if (browserName == toBrowserName(first.f, filterBy)) {
-            first.p.className = uaClass;
-          }
-          return true;
-        }
-      });
-    }
-    return result;
-  }
-
-  /**
-   * Executes a callback at a given delay interval until it returns `false`.
-   *
-   * @private
-   * @param {Function} callback The function called every poll interval.
-   * @param {number} delay The delay between callback calls (secs).
-   */
-  function poll(callback, delay) {
-    function poller(init) {
-      if (init || callback() !== false) {
-        setTimeout(poller, delay * 1e3);
-      }
-    }
-    poller(true);
-  }
-
-  /**
-   * Cleans up the last action and sets the current action.
-   *
-   * @private
-   * @param {string} action The current action.
-   */
-  function setAction(action) {
-    clearTimeout(cache.timers[cache.lastAction]);
-    cache.lastAction = action;
-  }
-
-  /**
-   * Converts the browser name version number to the format allowed by the
-   * specified filter.
-   *
-   * @private
-   * @param {string} name The full browser name .
-   * @param {string} filterBy The filter formating rules to apply.
-   * @returns {string} The converted browser name.
-   */
-  function toBrowserName(name, filterBy) {
-    name || (name = '');
-    if (filterBy == 'all') {
-      // truncate something like 1.0.0 to 1
-      name = name.replace(/(\d+)[.0]+$/, '$1');
-    }
-    else if (filterBy == 'family') {
-      // truncate something like XYZ 1.2 to XYZ
-      name = name.replace(/[.\d\s]+$/, '');
-    }
-    else if (/minor|popular/.test(filterBy) && /\d+(?:\.[1-9])+$/.test(name)) {
-      // truncate something like 1.2.3 to 1.2
-      name = name.replace(/(\d+\.[1-9])(\.[.\d]+$)/, '$1');
-    }
-    else {
-      // truncate something like 1.0 to 1 or 1.2.3 to 1 but leave something like 1.2 alone
-      name = name.replace(/(\d+)(?:(\.[1-9]$)|(\.[.\d]+$))/, '$1$2');
-    }
-    return name;
-  }
-
-  /**
-   * Replaces non-alphanumeric characters with spaces because Browserscope labels
-   * can only contain alphanumeric characters and spaces.
-   *
-   * @private
-   * @param {string} text The text to be converted.
-   * @returns {string} The Browserscope safe label text.
-   * @see https://code.google.com/p/browserscope/issues/detail?id=271
-   */
-  function toLabel(text) {
-    return (text || '').replace(/[^a-z0-9]+/gi, ' ');
-  }
-
-  /**
-   * Updates the `ui.browserscope.chartFrame` height based on the height of its content.
-   *
-   * @private
-   */
-  function updateChartFrameHeight() {
-    var me = ui.browserscope,
-        doc = me.chartWindow.document,
-        docEl = doc.documentElement,
-        body = doc.body;
-
-    me.chartFrame.style.height = max(
-      docEl.clientHeight,
-      docEl.offsetHeight, body.offsetHeight,
-      docEl.scrollHeight, body.scrollHeight
-    ) + 'px';
-  }
-
-  /*--------------------------------------------------------------------------*/
-
-  /**
-   * Loads Browserscope's cumulative results table.
-   *
-   * @static
-   * @memberOf ui.browserscope
-   * @param {Object} options The options object.
-   */
-  function load(options) {
-    options || (options = {});
-
-    var fired,
-        me = ui.browserscope,
-        cont = me.container,
-        filterBy = cache.lastFilterBy = options.filterBy || cache.lastFilterBy,
-        google = me.chartWindow.google,
-        responses = cache.responses,
-        response = cache.responses[filterBy],
-        visualization = google && google.visualization;
-
-    function onComplete(response) {
-      var lastResponse = responses[filterBy];
-      if (!fired) {
-        // set the fired flag to avoid Google's own timeout
-        fired = true;
-        // render if the filter is still the same, else cache the result
-        if (filterBy == cache.lastFilterBy) {
-          me.render({ 'force': true, 'response': lastResponse || response });
-        } else if(!lastResponse && response && !response.isError()) {
-          responses[filterBy] = response;
-        }
-      }
-    }
-    // set last action in case the load fails and a retry is needed
-    setAction('load');
-
-    if (!cont || !visualization || !visualization.Query || response) {
-      // exit early if there is no container element or the response is cached
-      // and retry if the visualization library hasn't loaded yet
-      setMessage('');
-      cont && onComplete(response);
-    }
-    else if (!ui.running) {
-      // set our own load timeout to display an error message and retry loading
-      cache.timers.load = setTimeout(onComplete, me.timings.timeout * 1e3);
-      // set "loading" message and attempt to load Browserscope data
-      setMessage(me.texts.loading);
-      // request Browserscope chart data and pass it to `google.visualization.Query.setResponse()`
-      (new visualization.Query(
-        'https://www.browserscope.org/gviz_table_data?category=usertest_' + me.key + '&v=' + filterMap[filterBy],
-        { 'sendMethod': 'scriptInjection' }
-      ))
-      .send(onComplete);
-    }
-  }
-
-  /**
-   * Creates a Browserscope beacon and posts the benchmark results.
-   *
-   * @static
-   * @memberOf ui.browserscope
-   */
-  function post() {
-    var me = ui.browserscope,
-        key = me.key,
-        snapshot = createSnapshot();
-
-    // set last action in case the post fails and a retry is needed
-    setAction('post');
-
-    if (key && snapshot && me.postable && !ui.running && !/Simulator/i.test(Benchmark.platform)) {
-      var win = me.chartWindow,
-          doc = win.document,
-          name = 'browserscope-' + cache.counter++,
-          iframe = createElement('iframe', name, doc);
-
-      // create new beacon
-      doc.body.appendChild(iframe);
-      iframe.style.display = 'none';
-
-      // expose results snapshot
-      me.snapshot = snapshot;
-
-      // set "posting" message and attempt to post the results snapshot
-      setMessage(me.texts.post);
-
-      // Note: We originally created an iframe to avoid Browserscope's old limit
-      // of one beacon per page load. It's currently used to implement custom
-      // request timeout and retry routines.
-      var idoc = win.frames[name].document;
-      idoc.write(_.template(
-        '${doctype}<title></title><body><script>' +
-        'with(parent.ui.browserscope){' +
-        'var _bTestResults=snapshot,' +
-        '_bC=function(){clearTimeout(_bT);parent.setTimeout(function(){purge();load()},${refresh}*1e3)},' +
-        '_bT=setTimeout(function(){_bC=function(){};render()},${timeout}*1e3)' +
-        '}<\/script>' +
-        '<script src=https://www.browserscope.org/user/beacon/${key}?callback=_bC><\/script>'
-      )({
-        'doctype': doctype,
-        'key': me.key,
-        'refresh': me.timings.refresh,
-        'timeout': me.timings.timeout
-      }));
-      // avoid the IE spinner of doom
-      // https://www.google.com/search?q=IE+throbber+of+doom
-      idoc.close();
-    }
-    else {
-      me.load();
-    }
-  }
-
-  /**
-   * Purges the Browserscope response cache.
-   *
-   * @static
-   * @memberOf ui.browserscope
-   * @param {string} key The key of a single cache entry to clear.
-   */
-  function purge(key) {
-    // we don't pave the cache object with a new one to preserve existing references
-    var responses = cache.responses;
-    if (key) {
-      delete responses[key];
-    } else {
-      _.forOwn(responses, function(value, key) {
-        delete responses[key];
-      });
-    }
-  }
-
-  /**
-   * Renders the cumulative results table.
-   * (tweak the dimensions and styles to best fit your environment)
-   *
-   * @static
-   * @memberOf ui.browserscope
-   * @param {Object} options The options object.
-   */
-  function render(options) {
-    options || (options = {});
-
-    // coordinates, dimensions, and sizes are in px
-    var areaHeight,
-        cellWidth,
-        me = ui.browserscope,
-        cont = me.container,
-        google = me.chartWindow.google,
-        responses = cache.responses,
-        visualization = google && google.visualization,
-        lastChart = cache.lastChart,
-        chart = cache.lastChart = options.chart || lastChart,
-        lastFilterBy = cache.lastFilterBy,
-        filterBy = cache.lastFilterBy = options.filterBy || lastFilterBy,
-        lastResponse = responses[filterBy],
-        response = responses[filterBy] = 'response' in options ? (response = options.response) && !response.isError() && response : lastResponse,
-        areaWidth = '100%',
-        cellHeight = 80,
-        fontSize = 13,
-        height = 'auto',
-        hTitle = 'operations per second (higher is better)',
-        hTitleHeight = 48,
-        left = 240,
-        legend = 'top',
-        maxChars = 0,
-        maxCharsLimit = 20,
-        maxOps = 0,
-        minHeight = 480,
-        minWidth = cont && cont.offsetWidth || 948,
-        title = '',
-        top = 50,
-        vTitle = '',
-        vTitleWidth = 48,
-        width = minWidth;
-
-    function retry(force) {
-      var action = cache.lastAction;
-      if (force || ui.running) {
-        cache.timers[action] = setTimeout(retry, me.timings.retry * 1e3);
-      } else {
-        me[action].apply(me, action == 'render' ? [options] : []);
-      }
-    }
-
-    // set action to clear any timeouts and prep for retries
-    setAction(response ? 'render' : cache.lastAction);
-
-    // exit early if there is no container element, the data filter has changed or nothing has changed
-    if (!cont || visualization && (filterBy != lastFilterBy ||
-        (!options.force && chart == lastChart && response == lastResponse))) {
-      cont && filterBy != lastFilterBy && load(options);
-    }
-    // retry if response data is empty/errored or the visualization library hasn't loaded yet
-    else if (!response || !visualization) {
-      // set error message for empty/errored response
-      !response && visualization && setMessage(me.texts.error);
-      retry(true);
-    }
-    // visualization chart gallery
-    // https://developers.google.com/chart/interactive/docs/gallery
-    else if (!ui.running) {
-      var data = cloneData(response.getDataTable()),
-          labels = getDataLabels(data),
-          rows = getDataRows(data),
-          rowCount = rows.length;
-
-      // capitalize chart
-      chart = chart.charAt(0).toUpperCase() + chart.slice(1).toLowerCase();
-
-      // clear `bs-rt-message`
-      cont.className = '';
-
-      // adjust data for non-tabular displays
-      if (chart != 'Table') {
-        // remove "# Tests" run count label (without label data the row will be ignored)
-        labels.pop();
-
-        // modify row data
-        _.each(rows, function(row) {
-          _.each(getDataCells(row), function(cell, index, cells) {
-            var lastIndex = cells.length - 1;
-
-            // cells[1] through cells[lastIndex - 1] are ops/sec cells
-            if (/^[\d.,]+$/.test(cell.f)) {
-              // assign ops/sec as cell value
-              cell.v = +cell.f.replace(/,/g, '');
-              // add rate to the text
-              cell.f += ' ops/sec';
-              // capture highest ops value to use when computing the left coordinate
-              maxOps = max(maxOps, cell.v);
-            }
-            // cells[0] is the browser name cell
-            // cells[lastIndex] is the run count cell and has no `f` property
-            else if (cell.f) {
-              // add test run count to browser name
-              cell.f += chart == 'Pie' ? '' : ' (' + (cells[lastIndex].v || 1) + ')';
-              // capture longest char count to use when computing left coordinate/cell width
-              maxChars = min(maxCharsLimit, max(maxChars, cell.f.length));
-            }
-            // compute sum of all ops/sec for pie charts
-            if (chart == 'Pie') {
-              if (index == lastIndex) {
-                cells[1].f = formatNumber(cells[1].v) + ' total ops/sec';
-              } else if (index > 1 && typeof cell.v == 'number') {
-                cells[1].v += cell.v;
-              }
-            }
-            // if the browser name matches the user's browser then style it
-            if (cell.p && cell.p.className) {
-              // prefix the browser name with a line separator (\u2028) because it's not rendered
-              // (IE may render a negligible space in the tooltip of browser names truncated with ellipsis)
-              cell.f = uaToken + cell.f;
-              // poll until the chart elements exist and are styled
-              poll(function() { return !addChartStyle(me.chartWindow.document); }, 0.01);
-            }
-          });
-        });
-
-        // adjust captions and chart dimensions
-        if (chart == 'Bar') {
-          // use minHeight to avoid sizing issues when there is only 1 bar
-          height = max(minHeight, top + (rowCount * cellHeight));
-          // compute left by adding the longest approximate vAxis text width and
-          // a right pad of 10px
-          left = (maxChars * (fontSize / 1.6)) + 10;
-          // get percentage of width left after subtracting the chart's left
-          // coordinate and room for the ops/sec number
-          areaWidth = (100 - (((left + 50) / width) * 100)) + '%';
-        }
-        else {
-          // swap captions (the browser list caption is blank to conserve space)
-          vTitle = [hTitle, hTitle = vTitle][0];
-          height = minHeight;
-
-          if (chart == 'Pie') {
-            legend = 'right';
-            title = 'Total operations per second by browser (higher is better)';
-          }
-          else {
-            hTitleHeight = 28;
-            // compute left by getting the sum of the horizontal space wanted
-            // for the vAxis title's width, the approximate vAxis text width, and
-            // the 13px gap between the chart and the right side of the vAxis text
-            left = vTitleWidth + (formatNumber(maxOps).length * (fontSize / 1.6)) + 13;
-            // compute cell width by adding the longest approximate hAxis text
-            // width and wiggle room of 26px
-            cellWidth = (maxChars * (fontSize / 2)) + 26;
-            // use minWidth to avoid clipping the key
-            width = max(minWidth, left + (rowCount * cellWidth));
-          }
-        }
-        // get percentage of height left after subtracting the vertical space wanted
-        // for the hAxis title's height, text size, the chart's top coordinate,
-        // and the 8px gap between the chart and the top of the hAxis text
-        areaHeight = (100 - (((hTitleHeight + fontSize + top + 8) / height) * 100)) + '%';
-        // make chart type recognizable
-        chart += 'Chart';
-      }
-
-      if (rowCount && visualization[chart]) {
-        var chartObject = new visualization[chart](cont);
-        visualization.events.addListener(chartObject, 'ready', updateChartFrameHeight);
-        chartObject.draw(data, {
-          'colors': ui.browserscope.colors,
-          'fontSize': fontSize,
-          'height': height,
-          'is3D': true,
-          'legend': legend,
-          'title': title,
-          'width': width,
-          'chartArea': { 'height': areaHeight, 'left': left, 'top': top, 'width': areaWidth },
-          'hAxis': { 'baseline': 0, 'title': hTitle },
-          'vAxis': { 'baseline': 0, 'title': vTitle }
-        });
-      } else {
-        setMessage(me.texts.empty);
-      }
-    }
-  }
-
-  /*--------------------------------------------------------------------------*/
-
-  // expose
-  ui.browserscope = {
-
-    /**
-     * Your Browserscope API key.
-     *
-     * @memberOf ui.browserscope
-     * @type string
-     */
-    'key': '',
-
-    /**
-     * A flag to indicate if posting is enabled or disabled.
-     *
-     * @memberOf ui.browserscope
-     * @type boolean
-     */
-    'postable': true,
-
-    /**
-     * The selector of the element to contain the entire Browserscope UI.
-     *
-     * @memberOf ui.browserscope
-     * @type string
-     */
-    'selector': '#bs-results',
-
-    /**
-     * The class name used to style the user's browser name when it appears
-     * in charts.
-     *
-     * @memberOf ui.browserscope
-     * @type string
-     */
-    'uaClass': 'rt-ua-cur',
-
-    /**
-     * Object containing various timings settings.
-     *
-     * @memberOf ui.browserscope
-     * @type Object
-     */
-    'timings': {
-
-      /**
-       * The delay before refreshing the cumulative results after posting (secs).
-       *
-       * @memberOf ui.browserscope.timings
-       * @type number
-       */
-      'refresh': 3,
-
-      /**
-       * The delay between load attempts (secs).
-       *
-       * @memberOf ui.browserscope.timings
-       * @type number
-       */
-      'retry': 5,
-
-      /**
-       * The time to wait for a request to finish (secs).
-       *
-       * @memberOf ui.browserscope.timings
-       * @type number
-       */
-      'timeout': 10
-    },
-
-    /**
-     * Object containing various text messages.
-     *
-     * @memberOf ui.browserscope
-     * @type Object
-     */
-    'texts': {
-
-      /**
-       * The text shown when their is no recorded data available to report.
-       *
-       * @memberOf ui.browserscope.texts
-       * @type string
-       */
-      'empty': 'No data available',
-
-      /**
-       * The text shown when the cumulative results data cannot be retrieved.
-       *
-       * @memberOf ui.browserscope.texts
-       * @type string
-       */
-      'error': 'The get/post request has failed :(',
-
-      /**
-       * The text shown while waiting for the cumulative results data to load.
-       *
-       * @memberOf ui.browserscope.texts
-       * @type string
-       */
-      'loading': 'Loading cumulative results data&hellip;',
-
-      /**
-       * The text shown while posting the results snapshot to Browserscope.
-       *
-       * @memberOf ui.browserscope.texts
-       * @type string
-       */
-      'post': 'Posting results snapshot&hellip;',
-
-      /**
-       * The text shown while benchmarks are running.
-       *
-       * @memberOf ui.browserscope.texts
-       * @type string
-       */
-      'wait': 'Benchmarks running. Please wait&hellip;'
-    },
-
-    // loads cumulative results table
-    'load': load,
-
-    // posts benchmark snapshot to Browserscope
-    'post': post,
-
-    // purges the Browserscope response cache
-    'purge': purge,
-
-    // renders cumulative results table
-    'render': render
-  };
-
-  /*--------------------------------------------------------------------------*/
-
-  addListener(window, 'load', function() {
-    var me = ui.browserscope,
-        key = me.key,
-        placeholder = key && query(me.selector)[0];
-
-    if (!placeholder) {
-      return;
-    }
-    var name = 'bs-chart-frame',
-        iframe = createElement('iframe', name);
-
-    iframe.id = name;
-    iframe.frameBorder = 0;
-    iframe.scrolling = 'no';
-
-    addListener(iframe, 'load', function() {
-      // the element the charts are inserted into
-      me.container = query('#bs-chart', idoc)[0];
-
-      if (!me.container) return;
-
-      // Browserscope's UA div is inserted before an element with the id of "bs-ua-script"
-      loadScript('https://www.browserscope.org/ua?o=js', me.container).id = 'bs-ua-script';
-
-      // the "autoload" string is created following the guide at
-      // https://developers.google.com/loader/?hl=en#auto-loading
-      loadScript(
-        'https://www.google.com/jsapi?autoload=' + encodeURIComponent('{' +
-          'modules:[{' +
-            'name:"visualization",' +
-            'version:1,' +
-            'packages:["corechart","table"],' +
-            'callback:ui.browserscope.load' +
-          '}]' +
-        '}'),
-        idoc
-      );
-    });
-
-    placeholder.parentNode.replaceChild(iframe, placeholder);
-
-    var iwin = frames[name],
-        idoc = iwin.document,
-        href = '/public/_css/main.src.css';
-
-    _.some(document.styleSheets, function(sheet) {
-      var value = sheet.href;
-      return value && value.indexOf(location.hostname) > -1 && (href = value);
-    });
-
-    idoc.write(_.template(
-      '${doctype}<html><head><meta charset="utf-8"><title></title>' +
-      '<link rel="stylesheet" href="${href}">' +
-      '<script>ui=parent.ui<\/script>' +
-      '</head><body>' +
-      '<div id=bs-results>' +
-      '<h1 id=bs-logo><a href=https://www.browserscope.org/user/tests/table/${key}>' +
-      '<span>Browserscope</span></a></h1>' +
-      '<div class=bs-rt><div id=bs-chart></div></div>' +
-      '</div>' +
-      '</body></html>'
-    )({
-      'doctype': doctype,
-      'href': href,
-      'key': key
-    }));
-    // avoid the IE spinner of doom
-    // https://www.google.com/search?q=IE+throbber+of+doom
-    idoc.close();
-
-    // the frame element of the charts
-    me.chartFrame = iframe;
-
-    // the frame window of the charts
-    me.chartWindow = iwin;
-  });
-
-  // hide the chart while benchmarks are running
-  ui.on('start', function() {
-    setMessage(ui.browserscope.texts.wait);
-  })
-  .on('abort', function() {
-    ui.browserscope.render({ 'force': true });
-  });
-
 }(this, document));
 }.call(this))

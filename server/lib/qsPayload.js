@@ -1,0 +1,18 @@
+'use strict';
+
+const Qs = require('qs');
+
+// hapi-qs also parsed urlencoded form payloads with qs (e.g. `test[0][title]=x` -> { test: [{ title: 'x' }] }).
+// hapi's own payload parser only does flat key/values so re-parse nested keys after the payload is read.
+exports.plugin = {
+  name: 'qsPayload',
+  register: (server) => {
+    server.ext('onPostAuth', (request, h) => {
+      if (request.mime === 'application/x-www-form-urlencoded') {
+        request.payload = Qs.parse(request.payload, { arrayLimit: 100 });
+      }
+
+      return h.continue;
+    });
+  }
+};

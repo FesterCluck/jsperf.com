@@ -1,108 +1,53 @@
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
 const sinon = require('sinon');
-
+const Support = require('../../../../support/server');
 const CommentPlugin = require('../../../../../server/web/comment');
 
-const cookiePass = 'password-should-be-32-characters';
-
-const YarPlugin = {
-  register: require('yar'),
-  options: { cookieOptions: { password: cookiePass } }
-};
-
-const AuthPlugin = {
-  register: require('hapi-auth-cookie'),
-  options: {}
-};
-
-const MockCommentService = {
-  register: (server, options, next) => {
-    server.expose('delete', function () {});
-    next();
-  }
-};
-
-MockCommentService.register.attributes = {
-  name: 'services/comments'
-};
+const MockCommentService = Support.mock('services/comments', ['delete']);
 
 const lab = exports.lab = Lab.script();
-let s;
 let server;
 
-lab.beforeEach(function (done) {
-  s = sinon.sandbox.create();
-
-  server = new Hapi.Server();
-  server.connection();
-  server.register([ AuthPlugin ], () => {
-    server.auth.strategy('session', 'cookie', {
-      password: cookiePass
-    });
-
-    server.register([
-      YarPlugin,
-      MockCommentService,
-      CommentPlugin
-    ], done);
-  });
-});
-
-lab.afterEach((done) => {
-  s.restore();
-  done();
+lab.beforeEach(async () => {
+  server = await Support.createServer({ views: false, yar: true, auth: true, plugins: [MockCommentService, CommentPlugin] });
 });
 
 lab.experiment('comment', () => {
   let request;
 
   lab.experiment('delete', () => {
-    lab.beforeEach((done) => {
+    lab.beforeEach(() => {
       request = {
         method: 'GET',
-        url: '/comment/delete/{commentId}'
+        url: '/comment/delete/1'
       };
-      done();
     });
 
-    lab.test('unauthorized if not admin', (done) => {
+    lab.test('unauthorized if not admin', async () => {
       // admin session not set
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(401);
+      const response = await server.inject(request);
 
-        done();
-      });
+      Code.expect(response.statusCode).to.equal(401);
     });
 
-    lab.test('if admin', (done) => {
-      s.stub(server.plugins['services/comments'], 'delete').returns(Promise.resolve());
-
+    lab.test('if admin', async () => {
+      const stub = sinon.stub(server.plugins['services/comments'], 'delete').resolves();
       server.route({
         method: 'GET',
         path: '/setsession',
-        config: {
-          handler: function (req, reply) {
-            req.yar.set('admin', true);
-            return reply('session set');
-          }
+        handler: (req) => {
+          req.yar.set('admin', true);
+          return 'session set';
         }
       });
 
-      server.inject('/setsession', function (res) {
-        var header = res.headers['set-cookie'];
-        var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
+      request.headers = { cookie: await Support.sessionCookie(server, '/setsession') };
+      const response = await server.inject(request);
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(200);
-          Code.expect(response.result).to.include('Comment deleted');
-
-          done();
-        });
-      });
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.result).to.include('Comment deleted');
+      Code.expect(stub.calledWith('1')).to.be.true();
     });
   });
 });

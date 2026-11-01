@@ -107,13 +107,6 @@
   {{/compare}}
 </section>
 
-{{#if page.browserscopeID}}
-  <section>
-    <h2 id="results">Compare results of other browsers</h2>
-    <div id="bs-results"></div>
-  </section>
-{{/if}}
-
 {{#compare 1 page.maxRev}}
   <section id="revisions">
     <h2>Revisions</h2>
@@ -147,7 +140,6 @@
     {{#each page.comments}}
       <article id="comment-{{inc @index}}" {{#compare ../page this operator="isOwner"}}class="owner"{{/compare}}>
         <p class="meta">
-          <img src="https://gravatar.com/avatar/{{md5 authorEmail}}?s=26" width="26" height="26">
           {{formatAuthor author authorURL true}}
 
           {{#compare ../page this operator="isOwner"}}
@@ -168,6 +160,7 @@
 
   {{#if credentials}}
     <form action="/{{page.slug}}{{#compare 1 page.revision}}/{{page.revision}}{{/compare}}#comment-form" method="post" id="comment-form">
+      <input type="hidden" name="crumb" value="{{crumb}}">
       <fieldset>
         <h2>Add a comment</h2>
         <div>
@@ -191,7 +184,7 @@
                 value="{{credentials.email}}"
               {{/if}}
             >
-            {{#if authorEmailError}} {{authorEmailError}}{{else}}(only used for Gravatar)</label>{{/if}}
+            {{#if authorEmailError}} {{authorEmailError}}{{else}}(won’t be displayed)</label>{{/if}}
         </div>
         <div>
           <label for="authorURL">URL </label>
@@ -199,11 +192,7 @@
             {{#if authorURL}}
               value="{{authorURL}}"
             {{else}}
-              {{#if credentials.raw.blog}}
-                value="{{credentials.raw.blog}}"
-              {{else}}
-                value="{{credentials.raw.html_url}}"
-              {{/if}}
+              value=""
             {{/if}}
           >
           {{#if authorURLError}} {{authorURLError}}{{/if}}
@@ -219,6 +208,6 @@
       </fieldset>
     </form>
   {{else}}
-      <a class="login" href="/auth/github"><i class="fa fa-github"></i> Login with GitHub to Edit Test Cases</a>
+      <a class="login" href="/login">Log in to Edit Test Cases</a> or <a href="/register">register</a>
   {{/if}}
 </section>

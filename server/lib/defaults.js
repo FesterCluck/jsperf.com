@@ -14,6 +14,13 @@ exports.errors = {
   codeTitle: 'Please enter a title for this code snippet.',
   code: 'Please enter a code snippet.',
   general: 'Please review required fields and save again.',
+  auth: {
+    username: 'Usernames may only contain letters, numbers and single hyphens (2-39 characters).',
+    password: 'Passwords must be between 8 and 128 characters.',
+    invalid: 'Invalid username or password.',
+    usernameTaken: 'This username is already taken. Please choose another one.',
+    general: 'Please review the form and try again.'
+  },
   comment: {
     author: 'Please enter your name.',
     authorEmail: 'Please enter your email address.',

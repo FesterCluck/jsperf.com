@@ -1,5 +1,5 @@
-const Lab = require('lab');
-const Code = require('code');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
 const sinon = require('sinon');
 
 const CustomStorage = require('../../../../../server/lib/db/umzugStorage');
@@ -7,43 +7,39 @@ const CustomStorage = require('../../../../../server/lib/db/umzugStorage');
 const lab = exports.lab = Lab.script();
 
 lab.experiment('Custom Umzug Storage', () => {
-  lab.test('constructs', (done) => {
+  lab.test('constructs', async () => {
     Code.expect(new CustomStorage({
       genericQuery: () => {}
     })).to.be.instanceof(CustomStorage);
-
-    done();
   });
 
-  lab.test('logMigration', (done) => {
+  lab.test('logMigration', async () => {
     const c = new CustomStorage({
       genericQuery: sinon.stub().returns(Promise.resolve())
     });
 
-    c.logMigration('1-test.js').then(done);
+    await c.logMigration({ name: '1-test.js' });
   });
 
-  lab.test('unlogMigration', (done) => {
+  lab.test('unlogMigration', async () => {
     const c = new CustomStorage({
       genericQuery: sinon.stub().returns(Promise.resolve())
     });
 
-    c.unlogMigration('1-test.js').then(done);
+    await c.unlogMigration({ name: '1-test.js' });
   });
 
-  lab.experiment('executed', (done) => {
-    lab.test('returns array of completed migrations', (done) => {
+  lab.experiment('executed', () => {
+    lab.test('returns array of completed migrations', async () => {
       const c = new CustomStorage({
         genericQuery: sinon.stub().returns(Promise.resolve([{ name: '1-test.js' }]))
       });
 
-      c.executed().then((names) => {
-        Code.expect(names).to.equal(['1-test.js']);
-        done();
-      });
+      const names = await c.executed();
+      Code.expect(names).to.equal(['1-test.js']);
     });
 
-    lab.test('returns empty array if table does not exist', (done) => {
+    lab.test('returns empty array if table does not exist', async () => {
       const err = new Error();
       err.code = 'ER_NO_SUCH_TABLE';
 
@@ -51,22 +47,17 @@ lab.experiment('Custom Umzug Storage', () => {
         genericQuery: sinon.stub().returns(Promise.reject(err))
       });
 
-      c.executed().then((names) => {
-        Code.expect(names).to.equal([]);
-        done();
-      });
+      const names = await c.executed();
+      Code.expect(names).to.equal([]);
     });
 
-    lab.test('passes along unknown errors', (done) => {
+    lab.test('passes along unknown errors', async () => {
       const testMsg = 'testingunknown';
       const c = new CustomStorage({
         genericQuery: sinon.stub().returns(Promise.reject(new Error(testMsg)))
       });
 
-      c.executed().catch((err) => {
-        Code.expect(err.message).to.equal(testMsg);
-        done();
-      });
+      await Code.expect(c.executed()).to.reject(testMsg);
     });
   });
 });

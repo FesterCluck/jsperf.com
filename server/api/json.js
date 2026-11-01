@@ -1,5 +1,6 @@
+'use strict';
 
-var mapTest = function (test) {
+const mapTest = function (test) {
   return {
     testID: test.testID,
     title: test.title,
@@ -8,7 +9,7 @@ var mapTest = function (test) {
   };
 };
 
-var mapPage = function (page) {
+const mapPage = function (page) {
   return {
     id: page.id,
     slug: page.slug,
@@ -23,7 +24,7 @@ var mapPage = function (page) {
   };
 };
 
-var mapRevision = function (revision) {
+const mapRevision = function (revision) {
   return {
     author: revision.author,
     revision: revision.revision,
@@ -34,7 +35,7 @@ var mapRevision = function (revision) {
   };
 };
 
-var mapComment = function (comment) {
+const mapComment = function (comment) {
   return {
     id: comment.id,
     author: comment.author,
@@ -43,34 +44,29 @@ var mapComment = function (comment) {
   };
 };
 
-exports.register = function (server, options, next) {
+const register = (server, options) => {
   const pagesService = server.plugins['services/pages'];
 
   server.route({
     method: 'GET',
     path: '/{slug}/{revision}.json',
-    handler: function (request, reply) {
-      return pagesService.getBySlug(request.params.slug, request.params.revision)
-        .then(function (results) {
-          reply({
-            page: mapPage(results[0]),
-            tests: results[1].map(mapTest),
-            revisions: results[2].map(mapRevision),
-            comments: results[3].map(mapComment)
-          })
-            .type('application/json')
-            .code(200);
-        })
-        .catch(function (error) {
-          reply(error);
-        });
+    handler: async (request, h) => {
+      const results = await pagesService.getBySlug(request.params.slug, request.params.revision);
+
+      return h.response({
+        page: mapPage(results[0]),
+        tests: results[1].map(mapTest),
+        revisions: results[2].map(mapRevision),
+        comments: results[3].map(mapComment)
+      })
+        .type('application/json')
+        .code(200);
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'api/json',
-  dependencies: ['services/pages']
+  dependencies: ['services/pages'],
+  register
 };

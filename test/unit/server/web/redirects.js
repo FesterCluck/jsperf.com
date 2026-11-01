@@ -1,47 +1,28 @@
-var Lab = require('lab');
-var Code = require('code');
-var Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../support/server');
 
-var WebRedirectsPlugin = require('../../../../server/web/redirects');
+const WebRedirectsPlugin = require('../../../../server/web/redirects');
 
-var lab = exports.lab = Lab.script();
-var request, server;
+const lab = exports.lab = Lab.script();
+let request, server;
 
-lab.beforeEach(function (done) {
-  var plugins = [ WebRedirectsPlugin ];
-  server = new Hapi.Server();
-  server.connection();
-  server.register(plugins, done);
+lab.beforeEach(async () => {
+  server = await Support.createServer({ views: false, plugins: [WebRedirectsPlugin] });
 });
 
 lab.experiment('redirects', function () {
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     request = {
       method: 'GET'
     };
-
-    done();
   });
 
-  lab.test('it redirects @ to twitter profile', function (done) {
-    request.url = '/@';
+  lab.test('it redirects aliases to relative URLs', async function () {
+    request.url = '/document-head-speed-test';
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(301);
-      Code.expect(response.headers.location).to.equal('https://twitter.com/jsperf');
-
-      done();
-    });
-  });
-
-  lab.test('it redirects aliases to relative URLs', function (done) {
-    request.url = '/donate';
-
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(301);
-      Code.expect(response.headers.location).to.equal('/sponsor');
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(301);
+    Code.expect(response.headers.location).to.equal('/document-head');
   });
 });

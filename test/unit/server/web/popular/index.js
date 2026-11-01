@@ -1,88 +1,49 @@
-const path = require('path');
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../../support/server');
 const sinon = require('sinon');
 
 const PopularPlugin = require('../../../../../server/web/popular/index');
 
-const MockPagesService = {
-  register: (server, options, next) => {
-    server.expose('getPopular', function () {});
-    next();
-  }
-};
-
-MockPagesService.register.attributes = {
-  name: 'services/pages'
-};
+const MockPagesService = Support.mock('services/pages', ['getPopular']);
 
 const lab = exports.lab = Lab.script();
-var request, server, pagesServiceStub;
+let request, server, pagesServiceStub;
 
-lab.beforeEach(function (done) {
-  server = new Hapi.Server();
-  server.connection();
-  server.register(require('vision'), () => {
-    server.views({
-      engines: {
-        hbs: require('handlebars')
-      },
-      path: './server/web',
-      layout: true,
-      helpersPath: 'templates/helpers',
-      partialsPath: 'templates/partials',
-      relativeTo: path.join(__dirname, '..', '..', '..', '..', '..')
-    });
-    server.register([
-      MockPagesService,
-      PopularPlugin
-    ], (err) => {
-      if (err) return done(err);
+lab.beforeEach(async () => {
+  server = await Support.createServer({ plugins: [MockPagesService, PopularPlugin] });
 
-      pagesServiceStub = {
-        getPopular: sinon.stub(server.plugins['services/pages'], 'getPopular')
-      };
-
-      done();
-    });
-  });
+  pagesServiceStub = {
+    getPopular: sinon.stub(server.plugins['services/pages'], 'getPopular')
+  };
 });
 
 lab.experiment('popular', function () {
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     request = {
       method: 'GET',
       url: '/popular'
     };
-
-    done();
   });
 
-  lab.test('it responds with popular pages', function (done) {
+  lab.test('it responds with popular pages', async function () {
     pagesServiceStub.getPopular.returns(Promise.resolve([]));
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-      Code.expect(response.result).to.include([
-        'Popular',
-        'recent',
-        'all-time'
-      ]);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
+    Code.expect(response.result).to.include([
+      'Popular',
+      'recent',
+      'all-time'
+    ]);
   });
 
-  lab.test('it responds with error', function (done) {
+  lab.test('it responds with error', async function () {
     server.plugins['services/pages'].getPopular = function () {
       return Promise.reject(new Error());
     };
 
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(500);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(500);
   });
 });
