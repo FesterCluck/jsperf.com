@@ -2,6 +2,7 @@
 
 // scooter exposes a plain object; format it as e.g. "Chrome 142.0.0 / Linux 6.1.0"
 const version = (item) => `${item.major}.${item.minor}.${item.patch}`;
+const named = (item) => (item.major === '0' ? item.family : `${item.family} ${version(item)}`);
 
 module.exports = (ua) => {
   if (!ua || !ua.family) {
@@ -9,7 +10,7 @@ module.exports = (ua) => {
   }
 
   const browser = ua.family === 'Other' ? ua.family : `${ua.family} ${version(ua)}`;
-  const os = ua.os && ua.os.family && ua.os.family !== 'Other' ? ` / ${ua.os.family} ${version(ua.os)}` : '';
+  const os = ua.os && ua.os.family && ua.os.family !== 'Other' ? ` / ${named(ua.os)}` : '';
 
   return browser + os;
 };
