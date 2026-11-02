@@ -7,6 +7,7 @@ const schema = require('../../lib/schema');
 const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const complexity = require('../../lib/complexity');
+const userAgent = require('../../lib/userAgent');
 
 const register = (server, options) => {
   const pagesService = server.plugins['services/pages'];
@@ -103,7 +104,7 @@ const register = (server, options) => {
     },
     handler: async (request, h) => {
       const model = await getTestPage(request);
-      model.userAgent = request.plugins.scooter.toString();
+      model.userAgent = userAgent(request.plugins.scooter);
       model.mediumTextLength = defaults.mediumTextLength;
       return h.view('test/index', model);
     }

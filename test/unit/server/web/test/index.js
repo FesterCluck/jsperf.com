@@ -104,6 +104,12 @@ lab.experiment('web/test plugin', function () {
     const $ = cheerio.load(response.payload);
     Code.expect($('title').text()).to.equal('Oh Yea · jsPerf');
 
+    // the caption names the visitor's browser, not an unformatted object
+    request.headers = { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36' };
+    const withAgent = cheerio.load((await server.inject(request)).payload);
+    Code.expect(withAgent('caption').text()).to.match(/^Testing in Chrome 142\.0\.0/);
+    Code.expect(withAgent('caption').text()).to.not.contain('[object Object]');
+
     // make sure revision list is correct
     const revLis = $('li', '#revisions');
     const firstRevLi = revLis.first();

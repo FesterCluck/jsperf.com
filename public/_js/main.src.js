@@ -78,7 +78,8 @@ $(function() {
 	}
 
 	$addTest.click(function(event) {
-		$(testHTML.replace(/1/g, ++testCount)).appendTo($tests);
+		var index = testCount++;
+		$(testHTML.replace(/test\[1\]/g, 'test[' + index + ']').replace('Code snippet 1', 'Code snippet ' + (index + 1))).appendTo($tests);
 		event.preventDefault();
 	});
 
