@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs project tasks; dependencies come from npm (node_modules).
+# Usage: ./run <start|watch|build|lint|test|test-e2e>
+ROOT=$(cd "$(dirname "$0")" && pwd)
+export PATH="$ROOT/node_modules/.bin:$PATH"
+cd "$ROOT" || exit 1
+cmd=$1; [ $# -gt 0 ] && shift
+case "$cmd" in
+  start) exec node server.js "$@" ;;
+  watch) exec node node_modules/nodemon/bin/nodemon.js -e js,hbs server.js "$@" ;;
+  build) exec node node_modules/gulp/bin/gulp.js "$@" ;;
+  lint) exec node node_modules/lab/bin/lab -d -L "$@" ;;
+  test) exec node node_modules/lab/bin/lab -I __core-js_shared__,__grim__ -t 100 -c --coverage-exclude test -L -r lcov -o lcov.info -r console -o stdout -r html -o coverage.html test/unit "$@" ;;
+  test-e2e) exec node node_modules/lab/bin/lab -L -m 30000 -M 10000 test/e2e "$@" ;;
+  *) echo "Usage: $0 <start|watch|build|lint|test|test-e2e>" >&2; exit 1 ;;
+esac

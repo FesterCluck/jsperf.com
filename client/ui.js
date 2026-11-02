@@ -605,6 +605,9 @@
   // (assumes ui.js is just before </body>)
   (function () {
     var sibling = $('bs-results');
+    if (!sibling) {
+      return;
+    }
     var p = createElement('p');
 
     p.innerHTML =

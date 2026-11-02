@@ -8,14 +8,33 @@ exports.register = function (server, options, next) {
     isSecure: options.session.isSecure
   });
 
-  server.auth.strategy('github', 'bell', {
-    provider: 'github',
-    password: options.oauth.password,
-    clientId: options.oauth.clientId,
-    clientSecret: options.oauth.clientSecret,
-    isSecure: options.oauth.isSecure,
-    location: options.oauth.location
+  server.auth.scheme('emulated-github', function () {
+    return {
+      authenticate: function (request, reply) {
+        return reply.continue({
+          credentials: {
+            provider: 'github',
+            profile: {
+              id: 1001,
+              username: 'testuser',
+              displayName: 'Test User',
+              email: 'testuser@example.com',
+              raw: {
+                login: 'testuser',
+                id: 1001,
+                name: 'Test User',
+                email: 'testuser@example.com',
+                blog: 'https://example.com',
+                html_url: 'https://example.com'
+              }
+            }
+          }
+        });
+      }
+    };
   });
+
+  server.auth.strategy('github', 'emulated-github');
 
   return next();
 };

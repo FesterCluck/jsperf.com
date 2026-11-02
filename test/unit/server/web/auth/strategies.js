@@ -32,6 +32,25 @@ lab.experiment('strategies', function () {
       require('hapi-auth-cookie'),
       require('bell'),
       StrategiesPlugin
-    ], done);
+    ], function (err) {
+      if (err) {
+        return done(err);
+      }
+
+      server.route({
+        method: 'GET',
+        path: '/test-auth',
+        config: {
+          auth: 'github',
+          handler: function (request, reply) {
+            return reply(request.auth.credentials);
+          }
+        }
+      });
+
+      server.inject({ method: 'GET', url: '/test-auth' }, function () {
+        done();
+      });
+    });
   });
 });

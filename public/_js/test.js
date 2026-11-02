@@ -21670,6 +21670,9 @@
   // (assumes ui.js is just before </body>)
   (function () {
     var sibling = $('bs-results');
+    if (!sibling) {
+      return;
+    }
     var p = createElement('p');
 
     p.innerHTML =
@@ -22733,16 +22736,16 @@
     },
 
     // loads cumulative results table
-    'load': load,
+    'load': function () {},
 
     // posts benchmark snapshot to Browserscope
-    'post': post,
+    'post': function () {},
 
     // purges the Browserscope response cache
-    'purge': purge,
+    'purge': function () {},
 
     // renders cumulative results table
-    'render': render
+    'render': function () {}
   };
 
   /*--------------------------------------------------------------------------*/

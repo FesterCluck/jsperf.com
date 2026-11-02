@@ -14,7 +14,7 @@
 
 ### Setup
 
-1. Install dependencies: `npm install`
+1. Run `npm install`
 2. Create a `.env` file (will be ignored by git) with the following variables (`VAR_NAME=value`):
 
 ```
@@ -53,7 +53,7 @@ COOKIE_PASS=password-should-be-32-characters
 - [x] `.env` created with your values
 
 ```
-npm start
+./run start
 ```
 
 Hopefully everything smoothly started up and you're ready to start [contributing](CONTRIBUTING.md). If not, check out the [wiki](https://github.com/jsperf/jsperf.com/wiki/Local-Development-Debugging) for debugging tips.

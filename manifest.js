@@ -23,6 +23,7 @@ var manifest = {
     }
   },
   connections: [{
+    host: '127.0.0.1',
     port: config.get('/port'),
     labels: ['web']
   }],
