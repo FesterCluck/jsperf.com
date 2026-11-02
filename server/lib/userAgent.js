@@ -2,7 +2,7 @@
 
 // scooter exposes a plain object; format it as e.g. "Chrome 142.0.0 / Linux 6.1.0"
 const version = (item) => `${item.major}.${item.minor}.${item.patch}`;
-const named = (item) => (item.major === '0' ? item.family : `${item.family} ${version(item)}`);
+const named = (item) => (/^[1-9]\d*$/.test(item.major) ? `${item.family} ${version(item)}` : item.family);
 
 module.exports = (ua) => {
   if (!ua || !ua.family) {
