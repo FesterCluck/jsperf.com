@@ -578,7 +578,16 @@ applet {
 }
 
 .complexity-row th, .complexity-row td {
+	border-bottom: 1px dotted #b5c2ce;
+}
+
+.complexity-row.complexity-end th, .complexity-row.complexity-end td {
 	border-bottom: 2px solid #8c9aa6;
+}
+
+.complexity-row th code {
+	white-space: pre-wrap;
+	word-break: break-word;
 }
 
 .complexity-row td.complexity-total small.complexity-note {
@@ -645,7 +654,75 @@ applet {
 .bigo-on2 { background: #f9d6d6; color: #911d1d; border-color: #dfa0a0; }
 .bigo-on3 { background: #f2c4c4; color: #7a1010; border-color: #d18a8a; }
 .bigo-higher { background: #e8b0b0; color: #5e0a0a; border-color: #c07070; }
+.bigo-oexp { background: #d99a9a; color: #430404; border-color: #b05a5a; }
+.bigo-ologn2 { background: #d4eef0; color: #17555d; border-color: #8cc6cc; }
+.bigo-onlogn2 { background: #f9dccb; color: #8a2e0e; border-color: #e0a98a; }
 .bigo-unknown { background: #eee; color: #666; border: 1px dashed #999; }
+
+/* what a call is made of: its steps continue to the right of the call's own chart, each with a smaller chart and its name below */
+.bigo-line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: .4em .6em;
+}
+
+.bigo-then {
+	align-self: center;
+	color: #6b7a88;
+	font-weight: bold;
+}
+
+.bigo-steps {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: .35em .7em;
+	min-width: 0;
+}
+
+.bigo-step {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	width: 6.2em;
+	text-align: center;
+	font-size: .8em;
+	line-height: 1.15;
+	color: #3b4651;
+}
+
+.bigo-step-name {
+	margin-top: .2em;
+	overflow-wrap: anywhere;
+}
+
+.bigo-more {
+	align-self: center;
+	width: auto;
+	font-style: italic;
+}
+
+.bigo-graph.bigo-mini {
+	padding: 2px 3px;
+}
+
+.bigo-mini svg {
+	width: 38px;
+	height: 19px;
+}
+
+.bigo-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
 
 /* < 801px */
 @media (max-width: 800px) {

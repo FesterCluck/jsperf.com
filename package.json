@@ -10,7 +10,7 @@
     "build:vendor": "node scripts/copy-vendor.js",
     "lint": "eslint .",
     "start": "node server.js",
-    "test": "lab -t 100 -c -r console -o stdout -r lcov -o lcov.info -r html -o coverage.html test/unit",
+    "test": "lab -t 100 -c --coverage-exclude scripts -r console -o stdout -r lcov -o lcov.info -r html -o coverage.html test/unit",
     "test-e2e": "playwright test",
     "watch": "nodemon -e js,hbs server.js",
     "test-e2e:install": "playwright install chromium"
