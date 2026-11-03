@@ -669,7 +669,8 @@ lab.experiment('frame', () => {
 
     const res = await server.inject(request);
     Code.expect(res.payload).to.startWith('<!doctype html>');
-    Code.expect(res.payload).to.include('<script src="/public/_js/frame.js"></script>');
+    Code.expect(res.payload).to.include('<script>').and.to.include('Benchmark');
+    Code.expect(res.payload).to.not.include('src="/public/_js/frame.js"');
     Code.expect(res.payload).to.include("'fn': 'data.length;'");
     Code.expect(res.payload).to.include("'defer': true");
     Code.expect(res.payload).to.include("Benchmark.prototype.setup = 'var data = [1, 2];'");
@@ -693,7 +694,7 @@ lab.experiment('frame', () => {
     pagesServiceStub.getBySlug.returns(Promise.resolve(values));
 
     const res = await server.inject(request);
-    Code.expect(res.payload).to.not.include('Benchmark.prototype');
+    Code.expect(res.payload).to.not.include('Benchmark.prototype.setup = function');
   });
 
   lab.test('not found', async () => {
