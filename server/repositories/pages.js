@@ -137,28 +137,6 @@ const register = (server, options) => {
     );
   });
 
-  server.expose('deleteOneRevisionBySlug', function (slug, rev) {
-    const queries = [];
-
-    queries.push(db.genericQuery('DELETE FROM tests WHERE pageID IN (SELECT id FROM pages WHERE slug = ? AND revision = ?)', [slug, rev]));
-    queries.push(db.genericQuery('DELETE FROM pages WHERE slug = ? AND revision = ?', [slug, rev]));
-
-    return Promise.all(queries).then(function (values) {
-      return values[1].affectedRows;
-    });
-  });
-
-  server.expose('deleteAllRevisionsBySlug', function (slug, rev) {
-    const queries = [];
-
-    queries.push(db.genericQuery('DELETE FROM tests WHERE pageID IN (SELECT id FROM pages WHERE slug = ?)', [slug]));
-    queries.push(db.genericQuery('DELETE FROM pages WHERE slug = ?', [slug]));
-
-    return Promise.all(queries).then(function (values) {
-      return values[1].affectedRows;
-    });
-  });
-
   server.expose('getSitemap', function () {
     return db.genericQuery("SELECT id AS pID, revision, slug, title, updated, (SELECT COUNT(*) FROM tests WHERE pageID = pID) AS testCount FROM pages WHERE visible = 'y' ORDER BY updated DESC");
   });

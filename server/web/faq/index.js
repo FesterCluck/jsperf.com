@@ -61,6 +61,10 @@ exports.plugin = {
               title: 'Is it possible to execute code before and after each clocked test loop, outside of the timed code region?',
               answer: 'That’s what <a href="https://benchmarkjs.com/docs#prototype_setup" title="Benchmark.prototype.setup"><code>Benchmark#setup</code></a> and <a href="https://benchmarkjs.com/docs#prototype_teardown" title="Benchmark.prototype.teardown"><code>Benchmark#teardown</code></a> are for. You can use the Setup and Teardown fields to use the same function (s) for all tests. To target specific tests, you can use <code>setTimeout(function () { ui.benchmarks[<var>0</var>].setup = function (){ … }; }, 1);</code> (and/or <code>teardown</code>) in the Preparation Code field, where <code><var>0</var></code> is the zero-indexed test ID.'
             }, {
+              slug: 'sandbox',
+              title: 'Why can’t my test use cookies, localStorage or the rest of the page?',
+              answer: 'The preparation code and the tests run in a sandboxed frame, so that code written by one person can’t act on behalf of whoever opens the test case. The frame has no access to jsPerf, its cookies or storage, <code>window.parent</code> or same-origin requests, and it can’t open dialogs or new windows. Everything else, including loading libraries and the DOM operations of your preparation code, works as before. Results are reported back to the page automatically.'
+            }, {
               slug: 'async',
               title: 'How can I run asynchronous tests?',
               answer: 'Just tick the “async” checkbox for each asynchronous test. You will then have access to a <code>deferred</code> object. In your test code, whenever your test is finished, call <code>deferred.resolve()</code>. Here’s an example: <a href="https://jsperf.com/smallest-timeout">https://jsperf.com/smallest-timeout</a>'

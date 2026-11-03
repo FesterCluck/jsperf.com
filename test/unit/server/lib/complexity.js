@@ -646,6 +646,11 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(overall('Math.abs(1);', none, { maxMs: -1 })).to.equal('unknown');
     });
 
+    lab.test('the page time budget leaves the remaining tests unknown', () => {
+      const results = analyzePage({}, [{ code: 'Math.abs(1);' }, { code: 'Math.abs(1);' }], { maxPageMs: -1 });
+      Code.expect(results.map((r) => r.overall)).to.equal(['unknown', 'unknown']);
+    });
+
     lab.test('deeply nested code gives unknown instead of a stack overflow', () => {
       const deep = '['.repeat(500) + ']'.repeat(500);
       Code.expect(overall(deep, none, { maxDepth: 50 })).to.equal('unknown');

@@ -34,7 +34,7 @@ const acorn = require('acorn');
 const regex = require('./regex');
 const builtins = require('./builtins');
 
-const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12 };
+const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000 };
 
 const REGEX_METHODS = new Set(['test', 'exec', 'match', 'matchAll', 'replace', 'replaceAll', 'search', 'split']);
 
@@ -1488,8 +1488,9 @@ const safe = (fn, fallback) => {
  *
  * @param {{initHTML?: string, setup?: string, teardown?: string}} page
  * @param {Array<{code: string}>} tests
- * @param {object} [options] limits overrides (maxCodeLength, maxSteps, maxMs, maxDepth, maxCalls); `engine` ('spec' or 'v8')
- *   analyzes with a single rule set, otherwise the standard's result is returned with the V8 one under `engines.v8`
+ * @param {object} [options] limits overrides (maxCodeLength, maxSteps, maxMs, maxDepth, maxCalls, maxPageMs); `engine`
+ *   ('spec' or 'v8') analyzes with a single rule set, otherwise the standard's result is returned with the V8 one
+ *   under `engines.v8`
  * @returns {Array<{estimate: true, overall: string, calls: Array<{code: string, cls: string}>}>} one result per test
  */
 const analyzePage = (page, tests, options) => {
@@ -1499,7 +1500,13 @@ const analyzePage = (page, tests, options) => {
     .map(parse)
     .filter(Boolean);
 
+  // each test has its own budget, this one keeps a page with many tests from holding up the event loop
+  const deadline = Date.now() + limits.maxPageMs;
   return tests.map((test) => {
+    if (Date.now() > deadline) {
+      return result('unknown', []);
+    }
+
     const code = String(test.code || '');
     if (limits.engine) {
       return analyzeOne(code, pageCode, limits);

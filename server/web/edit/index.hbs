@@ -13,24 +13,10 @@ This edit will create a new revision.
   <fieldset>
     <h3>Your details (optional)</h3>
     <div>
-      <label for="author">Name</label>
-        <input type="text" name="author" id="author"
-        {{#if isAdmin}}
-          value="{{page.author}}"
-        {{else if isOwn}}
-          value="{{page.author}}"
-        {{else}}
-          value="{{credentials.displayName}}"
-        {{/if}}
-        >
-    </div>
-    <div>
       <label for="authorEmail">Email </label>
       <label class="inline">
         <input type="email" name="authorEmail" id="authorEmail"
-          {{#if isAdmin}}
-            value="{{page.authorEmail}}"
-          {{else if isOwn}}
+          {{#if isOwn}}
             value="{{page.authorEmail}}"
           {{else}}
             value="{{credentials.email}}"
@@ -41,9 +27,7 @@ This edit will create a new revision.
     <div>
       <label for="authorURL">URL </label>
       <input type="url" name="authorURL" id="authorURL"
-      {{#if isAdmin}}
-        value="{{page.authorURL}}"
-      {{else if isOwn}}
+      {{#if isOwn}}
         value="{{page.authorURL}}"
       {{else}}
         value=""

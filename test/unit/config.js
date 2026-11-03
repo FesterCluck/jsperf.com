@@ -9,12 +9,14 @@ const required = [
   'MYSQL_DATABASE'
 ];
 
+const valueFor = (k) => (k === 'COOKIE_PASS' ? 'a-cookie-password-of-at-least-32-chars' : k);
+
 const load = () => Proxyquire('../../config', {
   dotenv: {
     config: () => {
       // set environment variables that should be in .env file
       for (const k of required) {
-        process.env[k] = process.env[k] || k;
+        process.env[k] = process.env[k] || valueFor(k);
       }
     }
   }
@@ -135,10 +137,31 @@ lab.experiment('Config', () => {
 
   lab.test('validates process.env', () => {
     for (const k of required) {
-      process.env[k] = k;
+      process.env[k] = valueFor(k);
     }
     delete process.env.MYSQL_USER;
 
     Code.expect(() => Proxyquire('../../config', { dotenv: { config: () => {} } })).to.throw('MYSQL_USER environment variable is missing');
+  });
+
+  lab.test('rejects a cookie password that is too short', () => {
+    for (const k of required) {
+      process.env[k] = valueFor(k);
+    }
+    process.env.COOKIE_PASS = 'short';
+
+    Code.expect(() => Proxyquire('../../config', { dotenv: { config: () => {} } })).to.throw('COOKIE_PASS environment variable is invalid');
+  });
+
+  lab.test('does not trust the proxy unless asked to', () => {
+    Code.expect(load().get('/trustProxy')).to.be.false();
+    process.env.TRUST_PROXY = 'true';
+    Code.expect(load().get('/trustProxy')).to.be.true();
+  });
+
+  lab.test('overrides do not leak into later lookups', () => {
+    const config = load();
+    Code.expect(config.get('/auth/session/secure', { scheme: 'https' })).to.be.true();
+    Code.expect(config.get('/auth/session/secure')).to.be.false();
   });
 });

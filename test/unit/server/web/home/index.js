@@ -193,29 +193,14 @@ lab.experiment('home', function () {
         Code.expect(response.headers.location).to.include(request.payload.slug);
       });
 
-      lab.test('sets own in session', async () => {
-        sinon.stub(server.plugins['services/pages'], 'create').returns(Promise.resolve(true));
-
-        server.route({
-          method: 'GET',
-          path: '/setsession',
-          handler: (req) => {
-            req.yar.set('own', { 2: true });
-            return 'session set';
-          }
-        });
-
-        const res = await server.inject('/setsession');
-        const header = res.headers['set-cookie'];
-        const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-        request.headers = {};
-        request.headers.cookie = 'session=' + cookie[1];
+      lab.test('records the creator as the owner and author', async () => {
+        const create = sinon.stub(server.plugins['services/pages'], 'create').returns(Promise.resolve(5));
+        request.auth.credentials.id = 12;
 
         const response = await server.inject(request);
         Code.expect(response.statusCode).to.equal(302);
-        Code.expect(response.headers.location).to.include(request.payload.slug);
-
-        // could inspect cookie to see `own` was expanded
+        Code.expect(create.args[0][0].userID).to.equal(12);
+        Code.expect(create.args[0][0].author).to.equal('koolaidman');
       });
     });
   });

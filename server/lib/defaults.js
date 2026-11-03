@@ -5,6 +5,8 @@ const regex = require('./regex');
 const MEDIUM_TEXT_LENGTH = 16777215;
 exports.mediumTextLength = MEDIUM_TEXT_LENGTH;
 
+exports.maxTests = 50;
+
 exports.deleteMe = 'GENERATED_DEFAULT_DELETE_ME';
 
 exports.errors = {
@@ -18,6 +20,7 @@ exports.errors = {
     username: 'Usernames may only contain letters, numbers and single hyphens (2-39 characters).',
     password: 'Passwords must be between 8 and 128 characters.',
     invalid: 'Invalid username or password.',
+    tooMany: 'Too many attempts. Please try again later.',
     usernameTaken: 'This username is already taken. Please choose another one.',
     general: 'Please review the form and try again.'
   },

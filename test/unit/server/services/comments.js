@@ -5,7 +5,7 @@ const sinon = require('sinon');
 
 const Comments = require('../../../../server/services/comments');
 
-const MockRepo = Support.mock('repositories/comments', ['create', 'delete']);
+const MockRepo = Support.mock('repositories/comments', ['create']);
 
 const lab = exports.lab = Lab.script();
 
@@ -18,7 +18,6 @@ lab.experiment('Comments Service', function () {
     server = await Support.createServer({ views: false, plugins: [MockRepo, Comments] });
 
     createStub = s.stub(server.plugins['repositories/comments'], 'create');
-    s.stub(server.plugins['repositories/comments'], 'delete');
 
     comments = server.plugins['services/comments'];
   });
@@ -52,13 +51,5 @@ lab.experiment('Comments Service', function () {
       const comment = await comments.create(null, null, payload);
       Code.expect(comment).to.include({ id });
     });
-  });
-
-  lab.test('delete', async () => {
-    const delStub = server.plugins['repositories/comments'].delete;
-    delStub.returns(Promise.resolve());
-    const id = 1;
-    await comments.delete(id);
-    Code.expect(delStub.calledWith(id)).to.be.true();
   });
 });

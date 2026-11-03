@@ -19,12 +19,6 @@ const register = (server, options) => {
     return server.plugins.db.genericQuery('INSERT INTO ?? SET ?', [table, payload])
       .then(result => result.insertId);
   });
-
-  server.expose('delete', function (commentId) {
-    server.log(['debug'], `${name}::delete: ${JSON.stringify(arguments)}`);
-
-    return server.plugins.db.genericQuery('DELETE FROM ?? WHERE id = ?', [table, commentId]);
-  });
 };
 
 exports.plugin = {

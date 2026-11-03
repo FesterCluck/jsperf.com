@@ -672,3 +672,19 @@ applet {
 .bigo-graph.space-graph { border-style: dashed; }
 .bigo-graph .space-icon { width: 12px; height: 12px; margin-right: 4px; }
 .complexity-total .bigo-graph .space-icon { width: 14px; height: 14px; }
+
+/* where the preparation code and the tests run; it has to stay visible, browsers throttle hidden frames */
+#test-frame {
+  display: block;
+  width: 100%;
+  height: 120px;
+  margin: 1em 0;
+  border: 1px solid #ddd;
+  background: #fff;
+  resize: vertical;
+}
+
+#test-frame.empty {
+  height: 40px;
+  border-style: dashed;
+}

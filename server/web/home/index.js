@@ -105,10 +105,8 @@ const register = (server) => {
         }
 
         payload.author = request.auth.credentials.username;
-        const resultPageId = await pagesService.create(payload);
-        const own = request.yar.get('own') || {};
-        own[resultPageId] = true;
-        request.yar.set('own', own);
+        payload.userID = request.auth.credentials.id;
+        await pagesService.create(payload);
         return h.redirect(basePath.url(request, `/${payload.slug}`));
       } catch (err) {
         return errResp(err);

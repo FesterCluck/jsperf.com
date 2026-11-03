@@ -4,6 +4,8 @@ const Crypto = require('node:crypto');
 const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const password = require('../../lib/password');
+const clientIp = require('../../lib/clientIp');
+const rateLimit = require('../../lib/rateLimit');
 const schema = require('../../lib/schema');
 
 // verified against when the username is unknown so response time doesn't reveal which usernames exist
@@ -15,11 +17,17 @@ const getDummyHash = () => {
 
 const tryAuth = { mode: 'try', strategy: 'session' };
 
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const MAX_ATTEMPTS = 10;
+
 exports.plugin = {
   name: 'web/auth/local',
   dependencies: ['repositories/users'],
   register: (server) => {
     const usersRepo = server.plugins['repositories/users'];
+    // per client address: failed logins and registrations
+    const loginLimiter = rateLimit({ max: MAX_ATTEMPTS, windowMs: ATTEMPT_WINDOW_MS });
+    const registerLimiter = rateLimit({ max: MAX_ATTEMPTS, windowMs: ATTEMPT_WINDOW_MS });
 
     const startSession = (request, user) => {
       request.cookieAuth.set({
@@ -50,19 +58,28 @@ exports.plugin = {
       path: '/login',
       options: { auth: tryAuth },
       handler: async (request, h) => {
+        const ip = clientIp(request);
         const context = { headTitle: 'Log in', genError: defaults.errors.auth.invalid };
-        const { error, value } = schema.login.validate(request.payload || {});
+        if (loginLimiter.blocked(ip)) {
+          context.genError = defaults.errors.auth.tooMany;
+          return renderForm(h, 'auth/login', context, 429);
+        }
+
+        const { error, value } = schema.login.validate(request.payload);
         if (error) {
+          loginLimiter.hit(ip);
           return renderForm(h, 'auth/login', context, 400);
         }
 
         const user = await usersRepo.getByUsername(value.username);
         const valid = await password.verify(value.password, user ? user.passwordHash : await getDummyHash());
         if (!user || !valid) {
+          loginLimiter.hit(ip);
           context.username = value.username;
           return renderForm(h, 'auth/login', context, 400);
         }
 
+        loginLimiter.reset(ip);
         startSession(request, user);
         return h.redirect(basePath.url(request, '/'));
       }
@@ -87,7 +104,14 @@ exports.plugin = {
       options: { auth: tryAuth },
       handler: async (request, h) => {
         const context = { headTitle: 'Register' };
-        const payload = request.payload || {};
+        const ip = clientIp(request);
+        if (registerLimiter.blocked(ip)) {
+          context.genError = defaults.errors.auth.tooMany;
+          return renderForm(h, 'auth/register', context, 429);
+        }
+
+        registerLimiter.hit(ip);
+        const payload = request.payload;
         const { error, value } = schema.register.validate(payload);
         if (error) {
           context.username = payload.username;

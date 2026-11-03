@@ -143,119 +143,34 @@ lab.experiment('GET', function () {
     Code.expect(response.payload.indexOf('check when your test case is finished')).to.be.at.least(0);
   });
 
-  lab.test('responds with "editing original" message for the original author', async function () {
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      handler: (req) => {
-        const owns = { 1: true };
-        req.yar.set('own', owns);
-        return 'session set';
-      }
-    });
-    const res = await server.inject('/setsession');
-    const header = res.headers['set-cookie'];
-    const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-    request.headers = {};
-    request.headers.cookie = 'session=' + cookie[1];
+  lab.test('responds with "editing original" message and the details for the owner', async function () {
+    request.auth.credentials = { id: 7, username: 'owner' };
     pagesServiceStub.getBySlug.returns(
-      Promise.resolve([defaultPageData, [], [], []])
+      Promise.resolve([Object.assign({}, defaultPageData, { userID: 7 }), [], [], []])
     );
     const response = await server.inject(request);
-    Code.expect(response.payload.indexOf('Since it’s your test case, this edit will overwrite the current revision without creating a new URL')).to.be.at.least(0);
+    Code.expect(response.payload).to.include('Since it’s your test case, this edit will overwrite the current revision without creating a new URL');
+    Code.expect(response.payload).to.include('a@s.co');
+    Code.expect(response.payload).to.include('as.co');
   });
 
-  lab.test('displays an "creating new revision" message for not the author', async function () {
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      handler: (req) => {
-        const owns = { 1: false };
-        req.yar.set('own', owns);
-        return 'session set';
-      }
-    });
-    const res = await server.inject('/setsession');
-    const header = res.headers['set-cookie'];
-    const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-    request.headers = {};
-    request.headers.cookie = 'session=' + cookie[1];
+  lab.test('displays a "creating new revision" message and hides the details for someone else', async function () {
+    request.auth.credentials = { id: 8, username: 'someone-else' };
     pagesServiceStub.getBySlug.returns(
-      Promise.resolve([defaultPageData, [], [], []])
+      Promise.resolve([Object.assign({}, defaultPageData, { userID: 7 }), [], [], []])
     );
     const response = await server.inject(request);
-    Code.expect(response.payload.indexOf('This edit will create a new revision.')).to.be.at.least(0);
+    Code.expect(response.payload).to.include('This edit will create a new revision.');
+    Code.expect(response.payload).to.not.include('a@s.co');
   });
 
-  lab.test("it displays the author's details name if being viewed by an admin", async function () {
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      handler: (req) => {
-        req.yar.set('admin', true);
-        return 'session set';
-      }
-    });
-    const res = await server.inject('/setsession');
-    const header = res.headers['set-cookie'];
-    const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-    request.headers = {};
-    request.headers.cookie = 'session=' + cookie[1];
+  lab.test('nobody owns a page without a userID', async function () {
+    request.auth.credentials = { id: 8, username: 'someone-else' };
     pagesServiceStub.getBySlug.returns(
       Promise.resolve([defaultPageData, [], [], []])
     );
     const response = await server.inject(request);
-    Code.expect(response.payload.indexOf('Andrew')).to.be.at.least(0);
-    Code.expect(response.payload.indexOf('a@s.co')).to.be.at.least(0);
-    Code.expect(response.payload.indexOf('as.co')).to.be.at.least(0);
-  });
-
-  lab.test("it displays the author's details if being viewed by the author", async function () {
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      handler: (req) => {
-        const owns = { 1: true };
-        req.yar.set('own', owns);
-        return 'session set';
-      }
-    });
-    const res = await server.inject('/setsession');
-    const header = res.headers['set-cookie'];
-    const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-    request.headers = {};
-    request.headers.cookie = 'session=' + cookie[1];
-    pagesServiceStub.getBySlug.returns(
-      Promise.resolve([defaultPageData, [], [], []])
-    );
-    const response = await server.inject(request);
-    Code.expect(response.payload.indexOf('Andrew')).to.be.at.least(0);
-    Code.expect(response.payload.indexOf('a@s.co')).to.be.at.least(0);
-    Code.expect(response.payload.indexOf('as.co')).to.be.at.least(0);
-  });
-
-  lab.test("it does not display the author's details if not being viewed by the author or an admin", async function () {
-    server.route({
-      method: 'GET',
-      path: '/setsession',
-      handler: (req) => {
-        const owns = { 1: false };
-        req.yar.set('own', owns);
-        return 'session set';
-      }
-    });
-    const res = await server.inject('/setsession');
-    const header = res.headers['set-cookie'];
-    const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-    request.headers = {};
-    request.headers.cookie = 'session=' + cookie[1];
-    pagesServiceStub.getBySlug.returns(
-      Promise.resolve([defaultPageData, [], [], []])
-    );
-    const response = await server.inject(request);
-    Code.expect(response.payload.indexOf('Andrew')).to.equal(-1);
-    Code.expect(response.payload.indexOf('a@s.co')).to.be.at.least(-1);
-    Code.expect(response.payload.indexOf('as.co')).to.be.at.least(-1);
+    Code.expect(response.payload).to.include('This edit will create a new revision.');
   });
 });
 
@@ -371,6 +286,30 @@ lab.experiment('POST', function () {
       Code.expect(firstCallArgs[2]).to.equal(44);
     });
 
+    lab.test('forks are unpublished, credited to and owned by the editor', async function () {
+      request.auth.credentials = { id: 9, username: 'koolaidman' };
+      request.payload.visible = 'y';
+      pagesServiceStub.edit.returns(Promise.resolve(45));
+
+      await server.inject(request);
+
+      const page = pagesServiceStub.edit.args[0][0];
+      Code.expect(page.visible).to.equal('n');
+      Code.expect(page.userID).to.equal(9);
+      Code.expect(page.author).to.equal('koolaidman');
+      Code.expect(page.authorGitHub).to.equal('koolaidman');
+    });
+
+    lab.test('the slug in the URL wins over the one in the form', async function () {
+      request.payload.slug = 'somebody-elses-test';
+      pagesServiceStub.edit.returns(Promise.resolve(45));
+
+      const response = await server.inject(request);
+
+      Code.expect(pagesServiceStub.edit.args[0][0].slug).to.equal('wee');
+      Code.expect(response.headers.location).to.equal('/wee/45');
+    });
+
     lab.test('redirects to new url after revision insertion', async function () {
       const rev = 45;
       pagesServiceStub.edit.onCall(0).returns(Promise.resolve(rev));
@@ -383,27 +322,13 @@ lab.experiment('POST', function () {
 
   lab.experiment('owner revision', function () {
     lab.beforeEach(async function () {
-      pagesServiceStub.getBySlug.returns(Promise.resolve([defaultPageData]));
-
-      server.route({
-        method: 'GET',
-        path: '/setsession',
-        handler: (req) => {
-          const owns = { 1: true };
-          req.yar.set('own', owns);
-          return 'session set';
-        }
-      });
+      request.auth.credentials = { id: 7, username: 'owner' };
+      pagesServiceStub.getBySlug.returns(Promise.resolve([Object.assign({}, defaultPageData, { userID: 7 })]));
     });
 
     lab.test('calls edit page service with update params', async function () {
       pagesServiceStub.edit.onCall(0).returns(Promise.resolve(request.payload));
 
-      const res = await server.inject('/setsession');
-      const header = res.headers['set-cookie'];
-      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
       await server.inject(request);
       const firstCallArgs = pagesServiceStub.edit.args[0];
 
@@ -412,15 +337,19 @@ lab.experiment('POST', function () {
       Code.expect(firstCallArgs[2]).to.equal(22);
     });
 
+    lab.test('lets the owner publish and keeps the owner', async function () {
+      request.payload.visible = 'y';
+      pagesServiceStub.edit.onCall(0).returns(Promise.resolve(1));
+
+      await server.inject(request);
+
+      const page = pagesServiceStub.edit.args[0][0];
+      Code.expect(page.visible).to.equal('y');
+      Code.expect(page.userID).to.not.exist();
+    });
+
     lab.test('calls edit page service with update params to delete test', async function () {
       pagesServiceStub.edit.onCall(0).returns(Promise.resolve(request.payload));
-
-      const res = await server.inject('/setsession');
-      const header = res.headers['set-cookie'];
-      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
 
       // add extra blank test to simulate deleting a code snippet
       request.payload.test.push({
@@ -437,48 +366,11 @@ lab.experiment('POST', function () {
     });
 
     lab.test('redirects to original url after update', async function () {
-      const rev = 1;
-      pagesServiceStub.edit.onCall(0).returns(Promise.resolve(rev));
+      pagesServiceStub.edit.onCall(0).returns(Promise.resolve(1));
 
-      const res = await server.inject('/setsession');
-      const header = res.headers['set-cookie'];
-      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
       const response = await server.inject(request);
       Code.expect(response.statusCode).to.equal(302);
       Code.expect(response.headers.location).to.equal(`/${defaultPageData.slug}`);
-    });
-  });
-
-  lab.experiment('admin revision', function () {
-    lab.beforeEach(async function () {
-      pagesServiceStub.getBySlug.returns(Promise.resolve([defaultPageData]));
-
-      server.route({
-        method: 'GET',
-        path: '/setsession',
-        handler: (req) => {
-          req.yar.set('admin', true);
-          return 'session set';
-        }
-      });
-    });
-
-    lab.test('calls edit page service with update params', async function () {
-      pagesServiceStub.edit.onCall(0).returns(Promise.resolve(request.payload));
-
-      const res = await server.inject('/setsession');
-      const header = res.headers['set-cookie'];
-      const cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-      request.headers = {};
-      request.headers.cookie = 'session=' + cookie[1];
-      await server.inject(request);
-      const firstCallArgs = pagesServiceStub.edit.args[0];
-
-      Code.expect(firstCallArgs[0].slug).to.equal(request.payload.slug);
-      Code.expect(firstCallArgs[1]).to.equal(true);
-      Code.expect(firstCallArgs[2]).to.equal(22);
     });
   });
 });

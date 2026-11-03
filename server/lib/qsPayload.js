@@ -10,6 +10,9 @@ exports.plugin = {
     server.ext('onPostAuth', (request, h) => {
       if (request.mime === 'application/x-www-form-urlencoded') {
         request.payload = Qs.parse(request.payload, { arrayLimit: 100 });
+      } else if (request.method === 'post' && request.payload === null) {
+        // an empty body leaves the payload null, which handlers would otherwise have to guard against
+        request.payload = {};
       }
 
       return h.continue;

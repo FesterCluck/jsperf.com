@@ -52,26 +52,6 @@
 
   {{#if benchmark}}
     <script src="{{@root.base}}/public/_js/test.js"></script>
-    <script>
-      {{#each page.test}}
-        ui.add(
-          {{{ cleanJsString title }}},
-          {
-            'defer': {{#compare defer "y" operator="==="}}true{{ else }}false{{/compare}},
-            'fn': {{{ cleanJsString code }}}
-          }
-        );
-      {{/each}}
-
-      {{#if page.setup}}
-        Benchmark.prototype.setup = {{{ cleanJsString page.setup }}}
-      {{/if}}
-      {{#if page.teardown}}
-        Benchmark.prototype.teardown = {{{ cleanJsString page.teardown }}}
-      {{/if}}
-    </script>
-
-    {{{ page.initHTML }}}
   {{else}}
     {{#if mainJS}}
       <script>window.jsPerfBase = '{{@root.base}}';</script>

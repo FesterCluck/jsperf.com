@@ -13,10 +13,11 @@ const envSchema = Joi.object({
   NODE_ENV: Joi.string().optional().default('development'),
   PORT: Joi.number().optional().default(3000),
   HOST: Joi.string().optional(),
+  TRUST_PROXY: Joi.boolean().optional().default(false),
   BASE_PATH: Joi.string().allow('').optional().default(''),
   COOKIE_NAME: Joi.string().optional().default('sid-jsperf'),
   DOMAIN: Joi.string().optional().default('localhost'),
-  COOKIE_PASS: Joi.string().required(),
+  COOKIE_PASS: Joi.string().min(32).required(),
   MYSQL_HOST: Joi.string().optional().default('localhost'),
   MYSQL_PORT: Joi.number().optional().default(3306),
   MYSQL_USER: Joi.string().required(),
@@ -37,7 +38,8 @@ const envSchema = Joi.object({
 const result = envSchema.validate(process.env);
 
 if (result.error) {
-  throw new Error(`${result.error.details[0].path[0]} environment variable is missing`);
+  const detail = result.error.details[0];
+  throw new Error(`${detail.path[0]} environment variable is ${detail.type === 'any.required' ? 'missing' : 'invalid'}`);
 }
 
 const Confidence = require('confidence');
@@ -51,6 +53,7 @@ const config = {
   env: result.value.NODE_ENV,
   port: result.value.PORT,
   host: result.value.HOST,
+  trustProxy: result.value.TRUST_PROXY,
   basePath: basePath.normalize(result.value.BASE_PATH),
   domain: result.value.DOMAIN,
   scheme: result.value.SCHEME,
@@ -87,8 +90,7 @@ const config = {
 const store = new Confidence.Store(config);
 
 exports.get = (key, overrides) => {
-  Object.assign(criteria, overrides);
-  return store.get(key, criteria);
+  return store.get(key, Object.assign({}, criteria, overrides));
 };
 
 exports.meta = (key) => {
