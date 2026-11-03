@@ -114,6 +114,11 @@
         <path d="M5,25 Q8,25 11,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
         <circle cx="11" cy="3" r="2.3" fill="currentColor"/>
       </g>
+      <g id="icon-space">
+        <rect x="1" y="1" width="10" height="3" rx="1" fill="currentColor"/>
+        <rect x="1" y="4.5" width="10" height="3" rx="1" fill="currentColor" opacity=".7"/>
+        <rect x="1" y="8" width="10" height="3" rx="1" fill="currentColor" opacity=".4"/>
+      </g>
       <g id="curve-unknown">
         <use href="#bigo-guides"/>
         <text x="29" y="21" text-anchor="middle" font-size="20" font-weight="bold" fill="currentColor">?</text>
@@ -153,7 +158,7 @@
           <td id="results-{{inc @index}}" class="results">pending…</td>
         </tr>
         {{#with complexityView}}
-          <tr class="complexity-row{{#if unknown}} complexity-unknown{{/if}}" title="Estimated Big-O complexity, derived statically from the source code (not measured)">
+          <tr class="complexity-row{{#if unknown}} complexity-unknown{{/if}}">
             <th scope="row">
               <ul class="call-list">
                 {{#each calls}}
@@ -168,7 +173,7 @@
               <ul class="call-list">
                 {{#each calls}}
                   <li>
-                    <span class="bigo-graph bigo-{{cls}}" title="{{label}} ({{name}}), estimated"><svg viewBox="0 0 56 28" role="img" aria-label="{{label}}"><use href="#{{curve}}"/></svg></span>
+                    <span class="bigo-graph bigo-{{cls}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
                   </li>
                 {{else}}
                   <li></li>
@@ -177,19 +182,41 @@
               </ul>
             </td>
             <td class="complexity-total">
-              <span class="bigo-graph bigo-{{overall.cls}}" title="{{overall.label}} ({{overall.name}}), estimated"><svg viewBox="0 0 56 28" role="img" aria-label="{{overall.label}}"><use href="#{{overall.curve}}"/></svg></span>
-              <small>Overall{{#unless unknown}}: {{overall.label}}{{/unless}}</small>
-              <small class="complexity-note">{{#if unknown}}unknown{{else}}estimated{{/if}}</small>
+              <span class="bigo-graph bigo-{{overall.cls}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
             </td>
           </tr>
+          {{#with space}}
+            <tr class="complexity-row space-row">
+              <th scope="row">
+                <ul class="call-list">
+                  {{#each items}}
+                    <li><code>{{code}}</code></li>
+                  {{else}}
+                    <li></li>
+                  {{/each}}
+                </ul>
+              </th>
+              <td class="complexity-breakdown">
+                <ul class="call-list">
+                  {{#each items}}
+                    <li>
+                      <span class="bigo-graph space-graph bigo-{{cls}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
+                    </li>
+                  {{else}}
+                    <li></li>
+                  {{/each}}
+                </ul>
+              </td>
+              <td class="complexity-total">
+                <span class="bigo-graph space-graph bigo-{{overall.cls}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
+              </td>
+            </tr>
+          {{/with}}
         {{/with}}
       {{/each}}
     </tbody>
   </table>
 
-  {{#if hasComplexity}}
-    <p class="complexity-legend">Big-O rows are <strong>estimates</strong> derived statically from the source code of each test (nothing is run), and the graphs are illustrative. &ldquo;Unknown&rdquo; means the analysis could not decide.</p>
-  {{/if}}
 
   {{#compare page.maxRev 2}}
     <p>You can <a href="{{@root.base}}/{{page.slug}}{{#compare 1 page.revision}}/{{page.revision}}{{/compare}}/edit" rel="nofollow">edit these tests or add even more tests to this page</a> by appending <code>/edit</code> to the URL.</p>

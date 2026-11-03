@@ -14,3 +14,9 @@ module.exports = (ua) => {
 
   return browser + os;
 };
+
+// Chromium based browsers run V8; everything else (and every browser on iOS, which are all WebKit) gets the standard's rules
+module.exports.engine = (header) => {
+  const ua = String(header || '');
+  return (/(?:Chrome|Chromium)\/\d/.test(ua) && !/\b(?:CriOS|FxiOS|EdgiOS|OPiOS)\b|iPhone|iPad|iPod/.test(ua)) ? 'v8' : 'spec';
+};

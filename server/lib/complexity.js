@@ -16,7 +16,7 @@
 //    (e.g. the `mid = (lo + hi) >>> 1` of a binary search).
 //  - Constant bounds: a loop bound is constant when it is a number literal, a
 //    never-reassigned variable initialised with a constant, `.length` of a
-//    never-reassigned array/string literal, or capped by a constant through
+//    never-reassigned, never-grown array/string literal, or capped by a constant through
 //    `Math.min(x, 24)`. Looping over / mapping an array literal is constant too.
 //  - Built-ins: sort => n log n, indexOf/includes/slice/join/... => n,
 //    forEach/map/filter/reduce/... => n * callback, push/pop/get/Math.* => 1.
@@ -26,13 +26,17 @@
 //    call costs work * n and several non-halving self calls are "higher"
 //    (exponential). Mutual recursion is "unknown".
 //  - Calls compose: cost(call) = cost(callee body) + cost(arguments).
+//  - A second pass (SpaceAnalyzer) estimates peak extra memory with the same classes, see its comment.
 //  - Anything undecidable (calling a parameter, unknown library function,
 //    eval, syntax errors, too much code/time) is "unknown".
 
 const acorn = require('acorn');
 const regex = require('./regex');
+const builtins = require('./builtins');
 
 const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12 };
+
+const REGEX_METHODS = new Set(['test', 'exec', 'match', 'matchAll', 'replace', 'replaceAll', 'search', 'split']);
 
 class BudgetError extends Error {}
 
@@ -85,37 +89,14 @@ const CLASSES = {
 // built-in knowledge
 // ---------------------------------------------------------------------------
 
-// instance methods that take constant time
-const O1_METHODS = new Set(['push', 'pop', 'charAt', 'charCodeAt', 'codePointAt', 'at', 'get', 'set', 'has', 'add', 'delete',
-  'getTime', 'toFixed', 'valueOf', 'hasOwnProperty', 'log', 'warn', 'error', 'info', 'debug', 'toString', 'bind', 'now', 'next']);
-// instance methods that touch every element of their receiver
-const N_METHODS = new Set(['indexOf', 'lastIndexOf', 'includes', 'slice', 'substring', 'substr', 'concat', 'join', 'split',
-  'reverse', 'fill', 'splice', 'shift', 'unshift', 'copyWithin', 'flat', 'trim', 'replace', 'replaceAll', 'match', 'matchAll',
-  'search', 'test', 'exec', 'startsWith', 'endsWith', 'padStart', 'padEnd', 'repeat', 'toUpperCase', 'toLowerCase',
-  'localeCompare', 'normalize', 'keys', 'values', 'entries', 'toReversed', 'with', 'clear']);
-// methods that run a callback once per element
-const CALLBACK_METHODS = new Set(['forEach', 'map', 'filter', 'reduce', 'reduceRight', 'some', 'every', 'find', 'findIndex',
-  'findLast', 'findLastIndex', 'flatMap']);
-const SORT_METHODS = new Set(['sort', 'toSorted']);
-
-// namespaces whose methods are all constant time
-const O1_NAMESPACES = new Set(['Math', 'Number', 'Date', 'console', 'performance', 'Symbol', 'Reflect', 'Boolean', 'BigInt']);
-const O1_GLOBAL_FUNCTIONS = new Set(['parseInt', 'parseFloat', 'isNaN', 'isFinite', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt']);
-const N_GLOBAL_FUNCTIONS = new Set(['encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI', 'escape', 'unescape', 'structuredClone']);
-// static helpers by namespace: null = every method of it
-const N_STATICS = new Map([['JSON', null], ['Object', new Set(['keys', 'values', 'entries', 'assign', 'fromEntries', 'freeze', 'getOwnPropertyNames'])]]);
-const O1_STATICS = new Map([['Object', new Set(['create', 'getPrototypeOf', 'defineProperty', 'is'])], ['Array', new Set(['isArray', 'of'])], ['String', new Set(['fromCharCode', 'fromCodePoint', 'raw'])]]);
-// constructors: arg => size dependent allocation
-const SIZED_CONSTRUCTORS = new Set(['Array', 'Set', 'Map', 'WeakSet', 'WeakMap', 'ArrayBuffer', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray',
-  'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array']);
-const O1_CONSTRUCTORS = new Set(['Date', 'Object', 'Error', 'TypeError', 'RangeError', 'RegExp', 'String', 'Number', 'Boolean']);
-
 // ---------------------------------------------------------------------------
 // AST helpers
 // ---------------------------------------------------------------------------
 
 const isNode = (v) => v !== null && typeof v === 'object' && typeof v.type === 'string';
 const isFn = (n) => n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression' || n.type === 'FunctionDeclaration';
+// `fn.bind(...)`: calling the result runs fn
+const isBind = (n) => n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && !n.callee.computed && n.callee.property.name === 'bind';
 
 const childNodes = (node) => {
   const out = [];
@@ -217,6 +198,31 @@ const memberName = (callee) => {
   return stringLiteral(callee.property) ? callee.property.value : null;
 };
 
+const GROWERS = new Set(['push', 'unshift', 'splice']);
+const LOOPS = /^(For|While|DoWhile)/;
+
+// names of arrays/strings whose size can change, so a literal initialiser no longer proves a constant size:
+// `.push()` / `.unshift()` / `.splice()` inside a loop or a function (it can run many times; `repeated` says the
+// root itself runs repeatedly, as test code does), and `x[i] = ...` / `x.length = ...` anywhere
+const grownNames = (root, out, repeated) => {
+  const stack = [[root, repeated]];
+  while (stack.length) {
+    const [node, repeat] = stack.pop();
+    if (node.type === 'CallExpression' && repeat && node.callee.type === 'MemberExpression' && node.callee.object.type === 'Identifier' && GROWERS.has(memberName(node.callee))) {
+      out.add(node.callee.object.name);
+    } else if (node.type === 'AssignmentExpression' && node.left.type === 'MemberExpression' && node.left.object.type === 'Identifier' && (memberName(node.left) === 'length' || (node.left.computed && !numberLiteral(node.left.property)))) {
+      out.add(node.left.object.name);
+    }
+
+    const inner = repeat || LOOPS.test(node.type) || isFn(node);
+    for (const child of childNodes(node)) {
+      stack.push([child, inner]);
+    }
+  }
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // the analyzer
 // ---------------------------------------------------------------------------
@@ -224,12 +230,17 @@ const memberName = (callee) => {
 class Analyzer {
   constructor (limits) {
     this.limits = limits;
+    this.b = builtins.profile(limits.engine);
     this.steps = 0;
     this.depth = 0;
     this.deadline = Date.now() + limits.maxMs;
     this.scopes = [new Map()];
     this.methods = new Map();
     this.assigned = new Set();
+    this.ownerCache = new Map();
+    this.fnSets = new Map(); // array name => the functions pushed into it
+    this.listeners = []; // functions registered with addEventListener
+    this.domParents = new Set(); // names of nodes that get children appended
     this.frames = [];
   }
 
@@ -282,7 +293,7 @@ class Analyzer {
   }
 
   // registers the functions, classes and variables declared by a statement list
-  collectDefs (statements, map) {
+  collectDefs (statements, map, owner = null) {
     for (const s of statements) {
       if (s.type === 'FunctionDeclaration') {
         map.set(s.id.name, { kind: 'fn', node: s });
@@ -290,7 +301,7 @@ class Analyzer {
         this.addClass(map, s.id.name, s);
       } else if (s.type === 'VariableDeclaration') {
         for (const d of s.declarations) {
-          this.collectDeclarator(d, map);
+          this.collectDeclarator(d, map, owner);
         }
       } else if (s.type === 'ExpressionStatement') {
         this.collectExpression(s.expression, map);
@@ -298,10 +309,10 @@ class Analyzer {
     }
   }
 
-  collectDeclarator (d, map) {
+  collectDeclarator (d, map, owner) {
     if (d.id.type !== 'Identifier') {
       for (const name of patternNames(d.id, [])) {
-        map.set(name, { kind: 'var', init: null });
+        map.set(name, { kind: 'var', init: null, owner });
       }
       return;
     }
@@ -312,7 +323,7 @@ class Analyzer {
     } else if (init && init.type === 'ClassExpression') {
       this.addClass(map, d.id.name, init);
     } else {
-      map.set(d.id.name, { kind: 'var', init });
+      map.set(d.id.name, { kind: 'var', init, owner });
       if (init && init.type === 'ObjectExpression') {
         this.addObjectMethods(init);
       }
@@ -334,9 +345,24 @@ class Analyzer {
 
   // ---- constants / sizes ----------------------------------------------------
 
+  // is `name` reassigned / grown? Page level names are checked across all the code, names declared in a block or
+  // function only within that block or function, so an unrelated `n = ...` elsewhere does not matter
+  isAssigned (name, owner) {
+    if (!owner) {
+      return this.assigned.has(name);
+    }
+
+    if (!this.ownerCache.has(owner)) {
+      const root = Array.isArray(owner) ? { type: 'BlockStatement', body: owner } : owner;
+      this.ownerCache.set(owner, grownNames(root, assignedNames(root, new Set()), true));
+    }
+
+    return this.ownerCache.get(owner).has(name);
+  }
+
   constEntry (name) {
     const found = this.lookup(name);
-    return (found && found.entry.kind === 'var' && found.entry.init && !this.assigned.has(name)) ? found.entry.init : null;
+    return (found && found.entry.kind === 'var' && found.entry.init && !this.isAssigned(name, found.entry.owner)) ? found.entry.init : null;
   }
 
   // cost of walking the elements of `expr` (arrays/strings written as literals are constant sized)
@@ -346,7 +372,14 @@ class Analyzer {
       target = this.constEntry(target.name) || target;
     }
 
-    return (target.type === 'ArrayExpression' || target.type === 'TemplateLiteral' || stringLiteral(target)) ? ZERO : LINEAR;
+    if (target.type === 'ObjectExpression') {
+      // an array-like `{ length: n }` is as big as its length, any other object literal has a fixed number of properties
+      const length = target.properties.find((p) => p.type === 'Property' && !p.computed && (p.key.name || p.key.value) === 'length');
+      return target.properties.some((p) => p.type === 'SpreadElement') ? LINEAR : (length ? this.boundCost(length.value) : ZERO);
+    }
+
+    const fixed = target.type === 'ArrayExpression' && !target.elements.some((e) => e && e.type === 'SpreadElement');
+    return (fixed || target.type === 'TemplateLiteral' || stringLiteral(target)) ? ZERO : LINEAR;
   }
 
   // upper bound of the *value* of a loop bound expression
@@ -484,6 +517,15 @@ class Analyzer {
       if (test.right.type === 'Identifier' && test.right.name === loopVar) {
         return this.boundCost(test.left);
       }
+      // `i * i <= n` stops at sqrt(n): no sqrt class exists, so report the cheaper bound's cost (an upper bound)
+      const isSquare = (node) => node.type === 'BinaryExpression' && node.operator === '*' && node.left.type === 'Identifier' && node.left.name === loopVar && node.right.type === 'Identifier' && node.right.name === loopVar;
+      if (loopVar && isSquare(test.left)) {
+        return this.boundCost(test.right);
+      }
+      if (loopVar && isSquare(test.right)) {
+        return this.boundCost(test.left);
+      }
+
       return max(this.boundCost(test.left), this.boundCost(test.right));
     }
 
@@ -623,7 +665,7 @@ class Analyzer {
 
   withScope (statements, fn) {
     const map = new Map();
-    this.collectDefs(statements, map);
+    this.collectDefs(statements, map, statements);
     this.scopes.push(map);
     try {
       return fn();
@@ -633,7 +675,7 @@ class Analyzer {
   }
 
   // cost of a function body, evaluated in the scope it was defined in
-  costFunction (fn, idx, inline = false) {
+  costFunction (fn, idx, inline = false, args = []) {
     const at = this.frames.findLastIndex((f) => f.fn === fn);
     if (at >= 0) {
       // a call back into a running function is plain recursion unless a named function sits in between
@@ -646,15 +688,18 @@ class Analyzer {
     }
 
     const frame = { fn, inline, sites: 0 };
+    const callbacks = fn.params.map((p, i) => (p.type === 'Identifier' && args[i]) ? (args[i].bound || this.functionValue(args[i])) : null);
+    const numbers = fn.params.map((p, i) => (p.type === 'Identifier' && args[i]) ? this.numberValue(args[i]) : null);
     this.frames.push(frame);
     const saved = this.scopes;
     this.scopes = saved.slice(0, idx + 1);
     const params = new Map();
-    for (const p of fn.params) {
+    fn.params.forEach((p, i) => {
       for (const name of patternNames(p, [])) {
-        params.set(name, { kind: 'param' });
+        // a parameter bound to a numeric constant is a value, not a size: loops bounded by it are constant
+        params.set(name, numbers[i] ? { kind: 'var', init: numbers[i], owner: fn.body } : { kind: 'param', callback: callbacks[i] });
       }
-    }
+    });
 
     this.scopes.push(params);
     try {
@@ -685,24 +730,58 @@ class Analyzer {
     return sites === 1 ? mul(work, LINEAR) : HIGHER;
   }
 
+  // the number literal an argument expression is known to be (itself, or a never-reassigned constant), else null
+  numberValue (arg) {
+    const init = arg.type === 'Identifier' ? this.constEntry(arg.name) : arg;
+    return init && numberLiteral(init) ? init : null;
+  }
+
+  // the function an argument expression stands for at a call site (an inline function, a named one, or a callback
+  // parameter that was itself bound to one), so that calling the matching parameter can be costed; null if unknown
+  functionValue (arg) {
+    if (isFn(arg)) {
+      return { node: arg, idx: this.scopes.length - 1 };
+    }
+    if (isBind(arg)) {
+      return this.functionValue(arg.callee.object);
+    }
+
+    const found = arg.type === 'Identifier' ? this.lookup(arg.name) : null;
+    if (found && found.entry.kind === 'fn') {
+      return { node: found.entry.node, idx: found.idx };
+    }
+
+    return found && found.entry.kind === 'param' ? found.entry.callback : null;
+  }
+
   // cost of invoking a function-valued expression (identifier or inline function)
-  calleeCost (expr) {
+  calleeCost (expr, bound = null) {
     if (isFn(expr)) {
-      return this.costFunction(expr, this.scopes.length - 1, true);
+      return this.costFunction(expr, this.scopes.length - 1, true, bound ? [{ bound }] : []);
+    }
+    if (isBind(expr)) {
+      return this.calleeCost(expr.callee.object);
     }
 
     return expr.type === 'Identifier' ? this.identifierCall(expr.name) : UNKNOWN;
   }
 
+  // spreading an array / string into a call passes every element
   argsCost (args) {
-    return this.costAll(args.filter((a) => !isFn(a)));
+    const spread = args.filter((a) => a.type === 'SpreadElement').map((a) => this.sizeCost(a.argument));
+    return spread.reduce(max, this.costAll(args.filter((a) => !isFn(a))));
   }
 
   costCall (node) {
     const { callee } = node;
     const args = this.argsCost(node.arguments);
     if (callee.type === 'Identifier') {
-      return max(args, this.identifierCall(callee.name));
+      // `Array(n)` allocates like `new Array(n)`
+      return max(args, (callee.name === 'Array' && !this.lookup('Array')) ? this.costNew(node) : this.identifierCall(callee.name, node.arguments));
+    }
+    if (callee.type === 'MemberExpression' && callee.computed && callee.object.type === 'Identifier' && this.fnSets.has(callee.object.name)) {
+      // `handlers[i](x)`: any of the functions kept in the array
+      return max(args, this.fnSets.get(callee.object.name).reduce((acc, e) => max(acc, this.costEntry(e)), this.cost(callee.property)));
     }
     if (callee.type === 'MemberExpression') {
       return max(args, this.methodCall(node, callee));
@@ -714,17 +793,29 @@ class Analyzer {
     return UNKNOWN;
   }
 
-  identifierCall (name) {
+  identifierCall (name, args = []) {
     const found = this.lookup(name);
     if (found) {
-      return found.entry.kind === 'fn' ? this.costFunction(found.entry.node, found.idx) : UNKNOWN;
+      if (found.entry.kind === 'param' && found.entry.callback) {
+        const { callback } = found.entry;
+        if (callback.multi) {
+          return callback.multi.reduce((acc, e) => max(acc, this.costEntry(e)), ZERO);
+        }
+
+        return this.costFunction(callback.node, callback.idx, callback.node.type !== 'FunctionDeclaration', args);
+      }
+      if (found.entry.kind === 'var' && found.entry.init && isBind(found.entry.init)) {
+        return this.calleeCost(found.entry.init);
+      }
+
+      return found.entry.kind === 'fn' ? this.costFunction(found.entry.node, found.idx, false, args) : UNKNOWN;
     }
 
-    if (O1_GLOBAL_FUNCTIONS.has(name)) {
+    if (this.b.O1_GLOBAL_FUNCTIONS.has(name)) {
       return ZERO;
     }
 
-    return N_GLOBAL_FUNCTIONS.has(name) ? LINEAR : UNKNOWN;
+    return this.b.N_GLOBAL_FUNCTIONS.has(name) ? LINEAR : UNKNOWN;
   }
 
   methodCall (node, callee) {
@@ -734,15 +825,20 @@ class Analyzer {
       return UNKNOWN;
     }
 
-    if (receiver.type === 'Identifier' && !this.lookup(receiver.name)) {
-      const known = this.staticCall(node, receiver.name, name);
+    const ns = receiver.type === 'Identifier' ? this.builtinName(receiver.name) : null;
+    if (ns !== null && !this.lookup(ns)) {
+      const known = this.staticCall(node, ns, name);
       if (known !== undefined) {
         return known;
       }
     }
 
+    if ((name === 'call' || name === 'apply') && receiver.type === 'MemberExpression' && memberName(receiver) && !this.methods.has(memberName(receiver))) {
+      return this.borrowedMethod(node, memberName(receiver), name);
+    }
     if (name === 'call' || name === 'apply') {
-      return this.calleeCost(receiver);
+      const own = receiver.type === 'MemberExpression' ? this.methods.get(memberName(receiver)) : null;
+      return own ? own.reduce((acc, fn) => max(acc, this.costFunction(fn, 0)), ZERO) : this.calleeCost(receiver);
     }
 
     const recv = this.cost(receiver);
@@ -750,54 +846,266 @@ class Analyzer {
       // the page defines a method of that name: assume that is the one being called
       return this.methods.get(name).reduce((acc, fn) => max(acc, this.costFunction(fn, 0)), recv);
     }
+    if (name === 'dispatchEvent') {
+      return max(recv, this.dispatchCost());
+    }
 
-    const size = this.sizeCost(receiver);
-    const callback = this.callbackCost(node.arguments[0]);
-    if (O1_METHODS.has(name)) {
+    const elements = (this.b.CALLBACK_METHODS.has(name) && receiver.type === 'Identifier' && this.fnSets.has(receiver.name)) ? { multi: this.fnSets.get(receiver.name) } : null;
+    const cost = this.builtinMethod(name, recv, this.sizeCost(receiver), this.callbackCost(node.arguments[0], elements), node);
+    return (cost !== UNKNOWN && this.backtracks(name, node)) ? HIGHER : cost;
+  }
+
+  // the built-in a name stands for (`var Kind = Float64Array`), or the name itself
+  builtinName (name) {
+    let current = name;
+    for (let i = 0; i < 4; i++) {
+      const found = this.lookup(current);
+      const init = found && found.entry.kind === 'var' && !this.assigned.has(current) ? found.entry.init : null;
+      if (!init || init.type !== 'Identifier') {
+        return current;
+      }
+      current = init.name;
+    }
+
+    return name;
+  }
+
+  // `Array.prototype.push.apply(a, b)` / `Object.prototype.hasOwnProperty.call(o, k)`: a built-in run on another receiver
+  borrowedMethod (node, method, how) {
+    const [self, ...rest] = node.arguments;
+    const synthetic = { callee: { object: self || { type: 'Identifier', name: 'undefined' } }, arguments: how === 'call' ? rest : [] };
+    const spread = how === 'apply' && rest[0] ? this.sizeCost(rest[0]) : ZERO; // `apply` passes every element as an argument
+    return max(spread, this.builtinMethod(method, ZERO, self ? this.sizeCost(self) : ZERO, ZERO, synthetic));
+  }
+
+  // ---- functions kept in arrays and event listeners -------------------------------
+
+  // the cost of one function recorded by collectFunctions, seen from the scope it was found in
+  costEntry (entry) {
+    const saved = this.scopes;
+    this.scopes = saved.slice(0, entry.idx + 1);
+    if (entry.env.size > 0) {
+      this.scopes.push(new Map([...entry.env].map(([name, multi]) => [name, { kind: 'param', callback: { multi } }])));
+    }
+
+    try {
+      return this.costFunction(entry.node, this.scopes.length - 1, true);
+    } finally {
+      this.scopes = saved;
+    }
+  }
+
+  // an event dispatch runs every registered listener once (how many there are is whatever the registration loops say)
+  dispatchCost () {
+    return this.listeners.reduce((acc, l) => max(acc, mul(l.mult, this.costEntry(l))), ZERO);
+  }
+
+  // finds the functions a page keeps in arrays (`list.push(fn)`, `[fn, fn]`) and registers as event listeners, so that
+  // calling an element of such an array, or a listener-less `dispatchEvent`, can be costed
+  collectFunctions (root) {
+    walk(root, (node) => {
+      if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && node.callee.object.type === 'Identifier' && ['appendChild', 'insertBefore', 'replaceChild', 'insertAdjacentHTML', 'append', 'prepend'].includes(memberName(node.callee))) {
+        this.domParents.add(node.callee.object.name);
+      } else if (node.type === 'AssignmentExpression' && node.left.type === 'MemberExpression' && node.left.object.type === 'Identifier' && memberName(node.left) === 'innerHTML') {
+        this.domParents.add(node.left.object.name);
+      }
+    });
+
+    const entryFor = (arg, env) => {
+      const value = this.functionValue(arg);
+      return value && !value.multi ? { node: value.node, idx: value.idx, env } : null;
+    };
+    const addTo = (name, arg, env) => {
+      const entry = entryFor(arg, env);
+      if (entry) {
+        this.fnSets.set(name, (this.fnSets.get(name) || []).concat(entry));
+      }
+    };
+
+    const visit = (node, mult, env, depth) => {
+      this.tick();
+      if (depth > this.limits.maxDepth) {
+        throw new BudgetError('nesting too deep');
+      }
+
+      let inner = mult;
+      let scope = env;
+      if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && !node.callee.computed) {
+        const name = memberName(node.callee);
+        const target = node.callee.object;
+        if (name === 'push' && target.type === 'Identifier') {
+          node.arguments.forEach((arg) => addTo(target.name, arg, env));
+        } else if (name === 'addEventListener' && node.arguments[1]) {
+          const entry = entryFor(node.arguments[1], env);
+          if (entry) {
+            this.listeners.push(Object.assign(entry, { mult }));
+          }
+        } else if (name === 'forEach' && target.type === 'Identifier' && this.fnSets.has(target.name) && node.arguments[0] && isFn(node.arguments[0]) && node.arguments[0].params[0]) {
+          const [param] = node.arguments[0].params;
+          if (param.type === 'Identifier') {
+            scope = new Map(env).set(param.name, this.fnSets.get(target.name));
+            inner = mul(mult, this.sizeCost(target));
+          }
+        }
+      } else if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init && node.init.type === 'ArrayExpression') {
+        node.init.elements.forEach((el) => el && addTo(node.id.name, el, env));
+      } else if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier' && node.right.type === 'ArrayExpression') {
+        node.right.elements.forEach((el) => el && addTo(node.left.name, el, env));
+      } else if (/^(For|While|DoWhile)/.test(node.type)) {
+        inner = mul(mult, this.loopTrip(node));
+      }
+
+      for (const child of childNodes(node)) {
+        // an inline callback's body is visited with the loops around it, a function declaration's is not run here
+        if (isFn(child) && child.type === 'FunctionDeclaration') {
+          continue;
+        }
+        visit(child, inner, scope, depth + 1);
+      }
+    };
+
+    visit(root, ZERO, new Map(), 0);
+  }
+
+  // is the receiver a string that is already stored (a variable or property, not a fresh concatenation or call result)?
+  // `substring` / `substr` only exist on strings, `slice` is also an array method so it needs a sign that it is text
+  storedString (name, receiver) {
+    const isText = (e) => stringLiteral(e) || e.type === 'TemplateLiteral';
+    if (isText(receiver)) {
+      return true;
+    }
+    if (receiver.type !== 'Identifier' && receiver.type !== 'MemberExpression') {
+      return false;
+    }
+
+    const found = receiver.type === 'Identifier' ? this.lookup(receiver.name) : null;
+    const init = found && found.entry.kind === 'var' ? found.entry.init : null;
+    return name !== 'slice' || (Boolean(init) && isText(init));
+  }
+
+  // `repeat(count)` / `padStart(width)` build a result as long as their argument says, whatever the receiver is
+  argSized (name, size, node) {
+    const length = node.arguments[0] ? this.boundCost(node.arguments[0]) : ZERO;
+    if (this.b.ropes) {
+      return isZero(length) ? ZERO : LOG; // doubling concatenations, nothing is copied until the string is read
+    }
+
+    return name === 'repeat' ? mul(size, length) : max(size, length);
+  }
+
+  // a regular expression with a quantified group that contains a quantifier can backtrack exponentially
+  backtracks (name, node) {
+    if (!REGEX_METHODS.has(name)) {
+      return false;
+    }
+
+    const literal = [node.callee.object, node.arguments[0]].find((e) => e && e.type === 'Literal' && e.regex);
+    return Boolean(literal) && /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*]|\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\{\d+,\d*\}/.test(literal.regex.pattern);
+  }
+
+  // the number of nodes a DOM insertion / removal walks: one for a node made by createElement that never got children
+  subtreeCost (arg) {
+    const created = (e) => e.type === 'CallExpression' && e.callee.type === 'MemberExpression' && ['createElement', 'createTextNode', 'createComment'].includes(memberName(e.callee));
+    if (!arg) {
+      return ZERO;
+    }
+
+    const found = arg.type === 'Identifier' ? this.lookup(arg.name) : null;
+    const init = found && found.entry.kind === 'var' ? found.entry.init : null;
+    return (created(arg) || (init && created(init) && !this.domParents.has(arg.name))) ? ZERO : LINEAR;
+  }
+
+  // DOM methods; undefined when `name` is not one
+  domMethod (name, recv, node) {
+    const { b } = this;
+    if (b.DOM_O1_METHODS.has(name)) {
       return recv;
     }
-    if (N_METHODS.has(name)) {
-      return max(recv, size);
-    }
-    if (CALLBACK_METHODS.has(name)) {
-      return max(recv, mul(size, callback));
+    if (b.DOM_SUBTREE_METHODS.has(name)) {
+      return max(recv, this.subtreeCost(node.arguments[0]));
     }
 
-    return SORT_METHODS.has(name) ? max(recv, mul(isZero(size) ? ZERO : NLOGN, callback)) : UNKNOWN;
+    return b.DOM_MARKUP_METHODS.has(name) ? max(recv, node.arguments[1] ? this.sizeCost(node.arguments[1]) : ZERO) : undefined;
+  }
+
+  // cost of a built-in instance method given the cost of its receiver, the receiver's size and one callback call
+  builtinMethod (name, recv, size, callback, node) {
+    const { b } = this;
+    const dom = this.domMethod(name, recv, node);
+    if (dom !== undefined) {
+      return dom;
+    }
+    if (b.ARG_SIZED.has(name)) {
+      return max(recv, this.argSized(name, size, node));
+    }
+    if (b.STRING_O1_METHODS.has(name) && this.storedString(name, node.callee.object)) {
+      return recv;
+    }
+    if (b.O1_METHODS.has(name)) {
+      return recv;
+    }
+    if (b.LOG_METHODS.has(name)) {
+      return max(recv, LOG);
+    }
+    if (b.N_METHODS.has(name)) {
+      return max(recv, size);
+    }
+    if (b.CALLBACK_METHODS.has(name)) {
+      return max(recv, mul(size, callback));
+    }
+    if (b.ONCE_CALLBACK_METHODS.has(name)) {
+      return max(recv, callback);
+    }
+
+    return b.SORT_METHODS.has(name) ? max(recv, mul(isZero(size) ? ZERO : NLOGN, callback)) : UNKNOWN;
   }
 
   // cost of one invocation of a callback argument; no callback => constant (default comparator, ...)
-  callbackCost (arg) {
-    return arg ? this.calleeCost(arg) : ZERO;
+  callbackCost (arg, bound = null) {
+    return arg ? this.calleeCost(arg, bound) : ZERO;
   }
 
   // Math.x(), Object.keys(x), JSON.parse(x), Array.from(x, fn) ...; undefined when `ns.name` is not a known built-in
   staticCall (node, ns, name) {
     const first = node.arguments[0];
-    if (O1_NAMESPACES.has(ns)) {
+    if (this.b.O1_NAMESPACES.has(ns)) {
       return ZERO;
     }
-    if (N_STATICS.has(ns) && (N_STATICS.get(ns) === null || N_STATICS.get(ns).has(name))) {
-      return first ? this.sizeCost(first) : ZERO;
+    if (this.b.N_STATICS.has(ns) && (this.b.N_STATICS.get(ns) === null || this.b.N_STATICS.get(ns).has(name))) {
+      return this.staticSize(name, node.arguments);
     }
-    if (O1_STATICS.has(ns) && O1_STATICS.get(ns).has(name)) {
+    if (this.b.O1_STATICS.has(ns) && this.b.O1_STATICS.get(ns).has(name)) {
       return ZERO;
     }
-    if (ns === 'Array' && name === 'from') {
-      return first ? mul(this.sizeCost(first), this.callbackCost(node.arguments[1])) : ZERO;
+    if ((ns === 'Array' || this.b.TYPED_ARRAYS.has(ns)) && name === 'from') {
+      return first ? this.fromCost(this.sizeCost(first), this.callbackCost(node.arguments[1])) : ZERO;
     }
 
     return undefined;
   }
 
+  fromCost (size, callback) {
+    return mul(size, callback);
+  }
+
+  // Object.assign copies from its sources (every argument after the first), the others walk their first argument
+  staticSize (name, args) {
+    const read = name === 'assign' ? args.slice(1) : args.slice(0, 1);
+    return read.reduce((acc, arg) => max(acc, this.sizeCost(arg)), ZERO);
+  }
+
   costNew (node) {
     const args = this.argsCost(node.arguments);
     const { callee } = node;
+    if (callee.type === 'MemberExpression' && callee.object.type === 'Identifier' && this.b.O1_NAMESPACES.has(callee.object.name) && !this.lookup(callee.object.name)) {
+      return args; // new Intl.NumberFormat(...), new Date(...)
+    }
     if (callee.type !== 'Identifier') {
       return UNKNOWN;
     }
 
-    const found = this.lookup(callee.name);
+    const alias = this.builtinName(callee.name);
+    const found = this.lookup(alias);
     if (found) {
       const { entry } = found;
       if (entry.kind === 'class') {
@@ -807,12 +1115,16 @@ class Analyzer {
     }
 
     const first = node.arguments[0];
-    if (SIZED_CONSTRUCTORS.has(callee.name)) {
+    if (this.b.SIZED_CONSTRUCTORS.has(alias)) {
       const size = !first ? ZERO : ((numberLiteral(first) || first.type === 'ArrayExpression') ? ZERO : this.sizeCost(first));
       return max(args, size);
     }
 
-    return O1_CONSTRUCTORS.has(callee.name) ? args : UNKNOWN;
+    if (alias === 'Promise') {
+      return max(args, this.callbackCost(first)); // the executor runs once
+    }
+
+    return this.b.O1_CONSTRUCTORS.has(alias) ? args : UNKNOWN;
   }
 
   // ---- the calls of a test body ------------------------------------------------
@@ -852,6 +1164,280 @@ class Analyzer {
 }
 
 // ---------------------------------------------------------------------------
+// memory estimate: the same walk, but the cost is the peak extra memory a snippet holds on to
+//  - temporaries (`slice`, `map`, `split`, `[...a]`, `new Array(n)` ...) cost the size of what they copy and are
+//    freed again, so a loop around them does not multiply them
+//  - collections that a loop keeps growing (`push`, `a[i] = x`, `s += 'x'`, `m.set(k, v)`) cost one slot per
+//    iteration, nested growing loops multiply
+//  - recursion keeps one frame per level: log n deep when the input is halved, n deep otherwise
+// ---------------------------------------------------------------------------
+
+const IN_PLACE_STATICS = new Set(['assign', 'freeze']);
+const GROWTH_METHODS = new Set(['push', 'unshift', 'add', 'set', 'appendChild', 'insertBefore', 'insertAdjacentHTML']);
+
+const declaredNames = (root) => {
+  const names = new Set();
+  walk(root, (node) => {
+    if (node.type === 'VariableDeclarator') {
+      patternNames(node.id, []).forEach((name) => names.add(name));
+    } else if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') {
+      names.add(node.id.name);
+    }
+  });
+  return names;
+};
+
+const rootName = (expr) => {
+  let node = expr;
+  while (node.type === 'MemberExpression') {
+    node = node.object;
+  }
+
+  if (node.type === 'ThisExpression') {
+    return 'this';
+  }
+
+  return node.type === 'Identifier' ? node.name : '?';
+};
+
+class SpaceAnalyzer extends Analyzer {
+  constructor (limits) {
+    super(limits);
+    this.grown = new Set(); // names of collections that grow in the current loop body / function
+    this.retained = []; // { cost, names } of the growing loops completed inside the current loop body / function
+  }
+
+  // does `x[i] = v` add slots to `name`? Only when it is built up from an empty literal: writing into an array that
+  // was created at its full size (`slice()`, `new Array(n)`, a parameter) just overwrites slots
+  startsEmpty (name) {
+    const found = this.lookup(name);
+    if (!found || found.entry.kind !== 'var') {
+      return false;
+    }
+
+    const init = found.entry.init;
+    const empty = (e) => e.type === 'ArrayExpression' || e.type === 'ObjectExpression' ||
+      (e.type === 'NewExpression' && e.callee.name === 'Array' && e.arguments.length === 0) ||
+      (e.type === 'CallExpression' && e.callee.type === 'MemberExpression' && e.callee.object.name === 'Object' && memberName(e.callee) === 'create');
+    return !init || empty(init);
+  }
+
+  // the name of the collection a node makes bigger, else null
+  growthTarget (node) {
+    if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression') {
+      const name = memberName(node.callee);
+      return (GROWTH_METHODS.has(name) || (name === 'splice' && node.arguments.length > 2)) ? rootName(node.callee.object) : null;
+    }
+
+    if (node.type !== 'AssignmentExpression') {
+      return null;
+    }
+
+    const { left, right, operator } = node;
+    if (left.type === 'MemberExpression') {
+      const root = rootName(left.object);
+      return (operator === '=' && left.computed && !numberLiteral(left.property) && this.startsEmpty(root)) ? root : null;
+    }
+
+    if (left.type !== 'Identifier') {
+      return null;
+    }
+
+    const found = this.lookup(left.name);
+    const isString = (e) => stringLiteral(e) || e.type === 'TemplateLiteral' || (e.type === 'BinaryExpression' && (isString(e.left) || isString(e.right)));
+    const text = Boolean(found && found.entry.init && isString(found.entry.init));
+    if (operator === '+=') {
+      return (isString(right) || text) ? left.name : null;
+    }
+    if (operator !== '=') {
+      return null;
+    }
+
+    const selfRef = (e) => e.type === 'Identifier' && e.name === left.name;
+    const concat = right.type === 'CallExpression' && right.callee.type === 'MemberExpression' && selfRef(right.callee.object) && memberName(right.callee) === 'concat';
+    const spread = right.type === 'ArrayExpression' && right.elements.some((e) => e && e.type === 'SpreadElement' && selfRef(e.argument));
+    const append = right.type === 'BinaryExpression' && right.operator === '+' && selfRef(right.left) && (text || isString(right.right));
+    return (concat || spread || append) ? left.name : null;
+  }
+
+  // listeners run one after the other: what they allocate is not added up
+  dispatchCost () {
+    return this.listeners.reduce((acc, l) => max(acc, this.costEntry(l)), ZERO);
+  }
+
+  // matching never allocates, however much it backtracks
+  backtracks () {
+    return false;
+  }
+
+  builtinMethod (name, recv, size, callback, node) {
+    const { b } = this;
+    const dom = this.domMethod(name, recv, node);
+    if (dom !== undefined) {
+      return dom;
+    }
+    if (b.ARG_SIZED.has(name)) {
+      return max(recv, this.argSized(name, size, node)); // the result is as big as the time spent building it (ropes share)
+    }
+    if (b.STRING_O1_METHODS.has(name) && this.storedString(name, node.callee.object)) {
+      return recv; // a slice of a stored string shares its characters
+    }
+    if (b.ALLOC_METHODS.has(name) || b.SORT_METHODS.has(name)) {
+      return max(recv, max(size, b.SORT_METHODS.has(name) ? callback : ZERO));
+    }
+    if (b.ALLOC_CALLBACK_METHODS.has(name)) {
+      return max(recv, max(size, callback));
+    }
+    if (b.CALLBACK_METHODS.has(name) || b.ONCE_CALLBACK_METHODS.has(name)) {
+      return max(recv, callback);
+    }
+
+    return (b.O1_METHODS.has(name) || b.LOG_METHODS.has(name) || b.N_METHODS.has(name)) ? recv : UNKNOWN;
+  }
+
+  staticSize (name, args) {
+    return IN_PLACE_STATICS.has(name) ? ZERO : super.staticSize(name, args);
+  }
+
+  fromCost (size, callback) {
+    return max(size, callback);
+  }
+
+  // one frame per level of recursion on top of whatever each level holds
+  recursive (fn, work) {
+    if (work === UNKNOWN) {
+      return UNKNOWN;
+    }
+
+    return hasScaling(fn.body) ? max(work, LOG) : mul(work, LINEAR);
+  }
+
+  costFunction (fn, idx, inline = false, args = []) {
+    const grown = this.grown;
+    const retained = this.retained;
+    this.grown = new Set();
+    this.retained = [];
+    try {
+      return super.costFunction(fn, idx, inline, args);
+    } finally {
+      // growing a collection the function did not create is visible to the caller's loop
+      const own = declaredNames(fn.body);
+      const params = fn.params.map((p) => (p.type === 'Identifier' ? p.name : null));
+      this.grown.forEach((name) => {
+        const at = params.indexOf(name);
+        if (at >= 0 && args[at]) {
+          grown.add(rootName(args[at])); // growing a parameter grows whatever was passed in
+        } else if (!own.has(name)) {
+          grown.add(name);
+        }
+      });
+      this.grown = grown;
+      this.retained = retained;
+    }
+  }
+
+  costNode (node) {
+    switch (node.type) {
+      case 'ForStatement':
+        return this.spaceLoop(node, [node.init, node.test, node.update, node.body]);
+      case 'WhileStatement':
+      case 'DoWhileStatement':
+        return this.spaceLoop(node, [node.test, node.body]);
+      case 'ForOfStatement':
+      case 'ForInStatement':
+        return max(this.cost(node.right), this.spaceLoop(node, [node.body]));
+      case 'ArrayExpression':
+      case 'ObjectExpression': {
+        const items = node.type === 'ArrayExpression' ? node.elements : node.properties;
+        const copies = items.filter((e) => e && e.type === 'SpreadElement').map((e) => this.sizeCost(e.argument));
+        return copies.reduce(max, super.costNode(node));
+      }
+      default: {
+        const target = this.growthTarget(node);
+        if (target !== null) {
+          this.grown.add(target);
+        }
+
+        return super.costNode(node);
+      }
+    }
+  }
+
+  spaceLoop (node, parts) {
+    const outer = { grown: this.grown, retained: this.retained };
+    this.grown = new Set();
+    this.retained = [];
+    let body;
+    let grown;
+    let inner;
+    try {
+      body = this.costAll(parts.filter(Boolean));
+      grown = this.grown;
+      inner = this.retained;
+    } finally {
+      this.grown = outer.grown;
+      this.retained = outer.retained;
+    }
+
+    // collections created inside the loop are thrown away with every iteration
+    const own = declaredNames(node);
+    const kept = (names) => new Set([...names].filter((name) => !own.has(name)));
+    const trip = this.loopTrip(node);
+    const found = [];
+    if (kept(grown).size > 0) {
+      found.push({ cost: trip, names: kept(grown) });
+    }
+
+    for (const r of inner) {
+      if (kept(r.names).size > 0) {
+        found.push({ cost: mul(trip, r.cost), names: kept(r.names) });
+      }
+    }
+
+    this.retained.push(...found);
+    return found.reduce((acc, f) => max(acc, f.cost), body);
+  }
+
+  // variables of the test body that hold on to a lot of memory, with the loops that grow them
+  listVariables (program) {
+    const rated = new Map();
+    const note = (name, cost) => {
+      rated.set(name, rated.has(name) ? max(rated.get(name), cost) : cost);
+    };
+
+    const visit = (node, mult, depth) => {
+      this.tick();
+      if (depth > this.limits.maxDepth) {
+        throw new BudgetError('nesting too deep');
+      }
+      if (isFn(node) || node.type === 'ClassDeclaration') {
+        return;
+      }
+      if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init) {
+        note(node.id.name, this.cost(node.init));
+      }
+
+      const target = this.growthTarget(node);
+      if (target !== null && target !== '?' && target !== 'this') {
+        note(target, mult);
+      }
+
+      let inner = mult;
+      if (/^(For|While|DoWhile)/.test(node.type)) {
+        inner = mul(mult, this.loopTrip(node));
+      }
+
+      for (const child of childNodes(node)) {
+        visit(child, inner, depth + 1);
+      }
+    };
+
+    program.body.forEach((stmt) => visit(stmt, ZERO, 0));
+    return [...rated].map(([name, cost]) => ({ code: name, cls: classify(cost) })).filter((v) => v.cls !== 'o1');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // public API
 // ---------------------------------------------------------------------------
 
@@ -883,7 +1469,10 @@ const snippet = (code, node) => {
   return text.length > 80 ? text.slice(0, 77) + '...' : text;
 };
 
-const result = (overall, calls, extra) => Object.assign({ estimate: true, overall, calls }, extra);
+// bump when the rules change: stored estimates with an older version are analyzed again on their next view
+const VERSION = 7;
+
+const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 
 const safe = (fn, fallback) => {
   try {
@@ -899,7 +1488,8 @@ const safe = (fn, fallback) => {
  *
  * @param {{initHTML?: string, setup?: string, teardown?: string}} page
  * @param {Array<{code: string}>} tests
- * @param {object} [options] limits overrides (maxCodeLength, maxSteps, maxMs, maxDepth, maxCalls)
+ * @param {object} [options] limits overrides (maxCodeLength, maxSteps, maxMs, maxDepth, maxCalls); `engine` ('spec' or 'v8')
+ *   analyzes with a single rule set, otherwise the standard's result is returned with the V8 one under `engines.v8`
  * @returns {Array<{estimate: true, overall: string, calls: Array<{code: string, cls: string}>}>} one result per test
  */
 const analyzePage = (page, tests, options) => {
@@ -909,26 +1499,57 @@ const analyzePage = (page, tests, options) => {
     .map(parse)
     .filter(Boolean);
 
-  return tests.map((test) => analyzeOne(String(test.code || ''), pageCode, limits));
+  return tests.map((test) => {
+    const code = String(test.code || '');
+    if (limits.engine) {
+      return analyzeOne(code, pageCode, limits);
+    }
+
+    // both rule sets are stored, the one that matches the viewer's browser is shown
+    const base = analyzeOne(code, pageCode, Object.assign({}, limits, { engine: 'spec' }));
+    const v8 = analyzeOne(code, pageCode, Object.assign({}, limits, { engine: 'v8' }));
+    delete v8.estimate;
+    delete v8.version;
+    return Object.assign(base, { engines: { v8 } });
+  });
 };
 
-const analyzeOne = (code, pageCode, limits) => {
-  const program = code.length > limits.maxCodeLength ? null : parse(code);
-  if (!program) {
-    return result('unknown', []);
-  }
-
-  const analyzer = new Analyzer(limits);
+const prepare = (Cls, program, pageCode, limits) => {
+  const analyzer = new Cls(limits);
 
   // page level definitions first, the test's own code is evaluated on top of them
   for (const p of pageCode) {
     analyzer.collectDefs(p.body, analyzer.scopes[0]);
     assignedNames(p, analyzer.assigned);
+    grownNames(p, analyzer.assigned, false);
   }
 
   assignedNames(program, analyzer.assigned);
+  grownNames(program, analyzer.assigned, true);
   analyzer.collectDefs(program.body, analyzer.scopes[0]);
+  [...pageCode, program].forEach((tree) => safe(() => analyzer.collectFunctions(tree), null));
+  return analyzer;
+};
 
+const analyzeSpace = (program, code, calls, pageCode, limits) => {
+  const analyzer = prepare(SpaceAnalyzer, program, pageCode, limits);
+  const items = calls.slice(0, limits.maxCalls).map(({ node, mult }) => {
+    const cost = safe(() => analyzer.cost(node), UNKNOWN);
+    // a call that grows a collection keeps one more element per iteration of the loops around it
+    return { code: snippet(code, node), cls: classify(cost === UNKNOWN ? UNKNOWN : (safe(() => analyzer.growthTarget(node), null) === null ? cost : max(cost, mult))) };
+  });
+
+  const variables = safe(() => analyzer.listVariables(program), []).slice(0, limits.maxCalls);
+  return { overall: classify(safe(() => analyzer.cost(program), UNKNOWN)), items, variables };
+};
+
+const analyzeOne = (code, pageCode, limits) => {
+  const program = code.length > limits.maxCodeLength ? null : parse(code);
+  if (!program) {
+    return result('unknown', [], { space: { overall: 'unknown', items: [], variables: [] } });
+  }
+
+  const analyzer = prepare(Analyzer, program, pageCode, limits);
   const calls = safe(() => analyzer.listCalls(program), []);
   const listed = calls.slice(0, limits.maxCalls).map(({ node, mult }) => ({
     code: snippet(code, node),
@@ -936,7 +1557,8 @@ const analyzeOne = (code, pageCode, limits) => {
   }));
 
   const overall = classify(safe(() => analyzer.cost(program), UNKNOWN));
-  return result(overall, listed, calls.length > listed.length ? { more: calls.length - listed.length } : {});
+  const space = analyzeSpace(program, code, calls, pageCode, limits);
+  return result(overall, listed, Object.assign({ space }, calls.length > listed.length ? { more: calls.length - listed.length } : {}));
 };
 
 const analyzeTest = (page, code, options) => analyzePage(page, [{ code }], options)[0];
@@ -946,8 +1568,9 @@ const analyzeTest = (page, code, options) => analyzePage(page, [{ code }], optio
  *
  * @returns {object|null} null when there is nothing to show
  */
-const present = (value) => {
-  const data = safe(() => (typeof value === 'string' ? JSON.parse(value) : value), null);
+const present = (value, engine) => {
+  const stored = safe(() => (typeof value === 'string' ? JSON.parse(value) : value), null);
+  const data = (engine === 'v8' && stored && stored.engines && stored.engines.v8) ? Object.assign({}, stored, stored.engines.v8) : stored;
   if (!data || !Array.isArray(data.calls)) {
     return null;
   }
@@ -956,7 +1579,13 @@ const present = (value) => {
     const key = Object.hasOwn(CLASSES, cls) ? cls : 'unknown';
     return Object.assign({ cls: key }, CLASSES[key]);
   };
+  const space = data.space && Array.isArray(data.space.items) ? data.space : null;
+  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls));
   return {
+    space: space && {
+      overall: info(space.overall),
+      items: space.items.concat(Array.isArray(space.variables) ? space.variables : []).map(rate)
+    },
     overall: info(data.overall),
     calls: data.calls.map((c) => Object.assign({ code: String(c.code) }, info(c.cls))),
     more: data.more || 0,
@@ -964,4 +1593,4 @@ const present = (value) => {
   };
 };
 
-module.exports = { analyzePage, analyzeTest, present, classify, CLASSES, DEFAULT_LIMITS };
+module.exports = { VERSION, analyzePage, analyzeTest, present, classify, CLASSES, DEFAULT_LIMITS };

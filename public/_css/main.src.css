@@ -667,3 +667,8 @@ applet {
 		width: 200px;
 	}
 }
+
+.space-row th, .space-row td { border-top: 0; }
+.bigo-graph.space-graph { border-style: dashed; }
+.bigo-graph .space-icon { width: 12px; height: 12px; margin-right: 4px; }
+.complexity-total .bigo-graph .space-icon { width: 14px; height: 14px; }

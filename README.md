@@ -82,3 +82,9 @@ Every test on a test page shows a row with a static **estimate** of its time com
 - `server/lib/complexity.js` parses the test code with [acorn](https://github.com/acornjs/acorn) (the code is never executed), resolves the calls to function definitions in the test, the page's setup/teardown and its `<script>` blocks, and combines loop nesting, halving/doubling loops, known built-ins (`sort`, `indexOf`, `Math.*`, ...), recursion and calls between functions. The overall class is the maximum over the test's code. The heuristics and their limits are documented at the top of that file. Loop bounds that are provably constant (number literals, constants, `.length` of array literals, `Math.min(x, 24)` caps) count as O(1).
 - Anything the analyzer cannot decide (syntax errors, unknown library calls, calling a function parameter, mutual recursion, too much code or time) is reported as "unknown".
 - The result is stored as JSON in the `tests.complexity` column (migration `20261104_add_complexity_to_tests.js`), computed when a page is created, edited or forked. Rows saved earlier have `NULL` there and are analyzed and stored the first time their page is viewed.
+
+## Sources of the built-in complexity data
+
+- [V8](https://github.com/v8/v8)
+- [Chromium (Blink)](https://github.com/chromium/chromium)
+- [ECMAScript specification](https://tc39.es/ecma262/)

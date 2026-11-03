@@ -4,6 +4,7 @@ const Support = require('../../../support/server');
 const sinon = require('sinon');
 
 const Pages = require('../../../../server/services/pages');
+const complexity = require('../../../../server/lib/complexity');
 
 const MockPagesRepo = Support.mock('repositories/pages', ['get', 'create', 'updateById', 'getPopularRecent', 'getPopularAllTime', 'find', 'updateHits', 'getBySlug', 'findBySlug', 'getVisibleBySlug', 'findVisibleBySlug', 'deleteOneRevisionBySlug', 'deleteAllRevisionsBySlug']);
 
@@ -393,7 +394,7 @@ lab.experiment('Pages Service', function () {
     });
 
     lab.test('analyzes and stores the estimate of tests that have none yet', async function () {
-      const stored = { estimate: true, overall: 'ologn', calls: [] };
+      const stored = { estimate: true, version: complexity.VERSION, overall: 'ologn', calls: [], space: { overall: 'o1', items: [], variables: [] } };
       const mockTests = [
         { testID: 1, code: 'data.sort()', complexity: null },
         { testID: 2, code: 'Math.abs(1)', complexity: stored },
@@ -412,8 +413,20 @@ lab.experiment('Pages Service', function () {
       Code.expect(testsRepoStub.setComplexity.getCall(1).args[1].overall).to.equal('on');
     });
 
+    lab.test('analyzes again estimates stored by an older version of the rules', async function () {
+      const mockTests = [{ testID: 1, code: 'Math.abs(1)', complexity: { version: complexity.VERSION - 1, overall: 'on', calls: [] } }];
+      pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1, setup: '', initHTML: '', teardown: '' }]));
+      testsRepoStub.findByPageID.returns(Promise.resolve(mockTests));
+      pagesRepoStub.findBySlug.returns(Promise.resolve([]));
+      commentsRepoStub.findByPageID.returns(Promise.resolve([]));
+
+      const values = await pages.getBySlug(slug, rev);
+      Code.expect(values[1][0].complexity.overall).to.equal('o1');
+      Code.expect(testsRepoStub.setComplexity.calledOnce).to.be.true();
+    });
+
     lab.test('does not touch the database when every test already has an estimate', async function () {
-      const mockTests = [{ testID: 1, code: 'x', complexity: { overall: 'o1', calls: [] } }];
+      const mockTests = [{ testID: 1, code: 'x', complexity: { version: complexity.VERSION, overall: 'o1', calls: [], space: { overall: 'o1', items: [], variables: [] } } }];
       pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1 }]));
       testsRepoStub.findByPageID.returns(Promise.resolve(mockTests));
       pagesRepoStub.findBySlug.returns(Promise.resolve([]));

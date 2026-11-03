@@ -69,7 +69,7 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(overall('for (var i = 0; i < n; i = i + 1) { x++; }')).to.equal('on');
       Code.expect(overall('for (var i = 0; i < n && !done; i++) { x++; }')).to.equal('on');
       Code.expect(overall('for (var i = 0; i < n || more; i++) { x++; }')).to.equal('on');
-      Code.expect(overall('for (var i = 0; i * i < n; i++) { x++; }')).to.equal('on2'); // products of bounds are multiplied: conservative
+      Code.expect(overall('for (var i = 0; i * i < n; i++) { x++; }')).to.equal('on'); // sqrt(n) iterations, rounded up to linear
       Code.expect(overall('for (;;) { break; }')).to.equal('on');
       Code.expect(overall('for (var p = head; p; p = p.next) { x++; }')).to.equal('on');
       Code.expect(overall('for (var i = 0; ok(i); i++) { x++; }', { setup: 'function ok() { return true; }' })).to.equal('on');
@@ -140,6 +140,12 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(overall('for (var i = 1; i < Math.log2(n); i *= 2) x++;')).to.equal('ologn');
     });
 
+    lab.test('a reassignment elsewhere does not affect a same-named local constant', () => {
+      const page = { setup: 'function other(n) { n = n.length; return n; }\nfunction count(n) { var s = 0; for (var i = 0; i < n; i++) s++; return s; }' };
+      Code.expect(overall('count(10);', page)).to.equal('o1');
+      Code.expect(overall('function f() { var k = 5; return k; }\nfunction g(k) { k = k.length; for (var i = 0; i < k; i++) x++; }\nf(); g(data);', none)).to.equal('on');
+    });
+
     lab.test('reassigned or non-constant variables are not constants', () => {
       Code.expect(overall('for (var i = 0; i < SIZE; i++) x++;', { setup: 'var SIZE = 48; SIZE = n;' })).to.equal('on');
       Code.expect(overall('SIZE += 1; for (var i = 0; i < SIZE; i++) x++;', { setup: 'var SIZE = 48;' })).to.equal('on');
@@ -203,6 +209,15 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(overall('for (var i = 3; 10 > i; i++) y++;')).to.equal('o1');
     });
 
+    lab.test('a square-root bound (i * i <= n) is no worse than linear', () => {
+      Code.expect(overall('for (var i = 1; i * i <= n; i++) y++;')).to.equal('on');
+      Code.expect(overall('for (var i = 1; n >= i * i; i++) y++;')).to.equal('on');
+      Code.expect(overall('for (var i = 1; i * j <= n; i++) y++;')).to.equal('on2');
+      Code.expect(overall('for (var i = 1; j * i <= n; i++) y++;')).to.equal('on2');
+      Code.expect(overall('for (var i = 1; i * 2 <= n; i++) y++;')).to.equal('on');
+      Code.expect(overall('for (var i = 1; 2 * i <= n; i++) y++;')).to.equal('on');
+    });
+
     lab.test('while loops with odd tests', () => {
       Code.expect(overall('while ((a >> 1) < b) { a = a + 1; }')).to.equal('ologn');
       Code.expect(overall('while (h) { h = h * 0; }')).to.equal('on');
@@ -219,6 +234,22 @@ lab.experiment('complexity analyzer', () => {
   });
 
   lab.experiment('built-ins', () => {
+    lab.test('an array literal stays constant unless it can grow', () => {
+      const lit = 'var a = [3, 1, 2];';
+      Code.expect(overall('a.sort();', { setup: lit })).to.equal('o1');
+      Code.expect(overall('a.sort();', { setup: lit + ' a.push(4);' })).to.equal('o1'); // one-off growth at setup time
+      Code.expect(overall('a.sort();', { setup: lit + ' a[5] = 1;' })).to.equal('o1');
+      Code.expect(overall('a.sort();', { setup: lit + ' b.length = 1; b[0] = 1; b.push(1);' })).to.equal('o1'); // other arrays do not matter
+      Code.expect(overall('a.sort();', { setup: 'var a = []; for (var i = 0; i < n; i++) { a.push(i); }' })).to.equal('onlogn');
+      Code.expect(overall('a.sort();', { setup: lit + ' function f() { a.unshift(1); }' })).to.equal('onlogn');
+      Code.expect(overall('a.push(1); a.sort();', { setup: lit })).to.equal('onlogn'); // test code runs repeatedly
+      Code.expect(overall('a.sort();', { setup: lit + ' a[i] = 1;' })).to.equal('onlogn');
+      Code.expect(overall('a.sort();', { setup: lit + ' a.length = n;' })).to.equal('onlogn');
+      Code.expect(overall('a.sort();', { setup: lit + ' for (const k in o) { a.splice(0, 1); }' })).to.equal('onlogn');
+      Code.expect(overall('for (var i = 0; i < a.length; i++) y++;', { setup: lit })).to.equal('o1');
+      Code.expect(overall('for (var i = 0; i < a.length; i++) y++;', { setup: lit + ' while (k--) { a.push(k); }' })).to.equal('on');
+    });
+
     lab.test('sort is n log n, sort of a literal is constant', () => {
       Code.expect(overall('data.sort();')).to.equal('onlogn');
       Code.expect(overall('data.slice().sort(function (a, b) { return a - b; });')).to.equal('onlogn');
@@ -241,8 +272,13 @@ lab.experiment('complexity analyzer', () => {
 
     lab.test('constant time built-ins', () => {
       for (const code of ['data.push(1)', 'data.pop()', 'Math.max(a, b)', 'map.get(k)', 'set.has(k)', 'str.charCodeAt(0)', 'Date.now()', 'console.log(x)', 'parseInt(x, 10)', 'String(x)', 'Number("1")', 'Array.isArray(x)', 'Object.create(null)', 'String.fromCharCode(65)', 'performance.now()', 'Object.is(a, b)', 'fn.bind(null)']) {
-        Code.expect(overall(code), code).to.equal('o1');
+        Code.expect(overall(code, none, { engine: 'v8' }), code).to.equal('o1');
       }
+    });
+
+    lab.test('keyed collections are only promised to be sublinear by the standard', () => {
+      Code.expect(overall('map.get(k); set.has(k); set.add(k); map.delete(k)')).to.equal('ologn');
+      Code.expect(overall('map.get(k); set.has(k); set.add(k); map.delete(k)', none, { engine: 'v8' })).to.equal('o1');
     });
 
     lab.test('callbacks run once per element', () => {
@@ -266,7 +302,13 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(overall('Array.from(data)')).to.equal('on');
       Code.expect(overall('Array.from(data, function (x) { return x; })')).to.equal('on');
       Code.expect(overall('Array.from()')).to.equal('o1');
-      Code.expect(overall('Array.from({ length: 3 })')).to.equal('on');
+      Code.expect(overall('Array.from({ length: 3 })')).to.equal('o1');
+      Code.expect(overall('Array.from({ length: n })')).to.equal('on');
+      Code.expect(overall('Array.from({ "length": 2, extra: 1 })')).to.equal('o1');
+      Code.expect(overall('Array.from({ ...x })')).to.equal('on');
+      Code.expect(overall('Array.from({ a: 1, [k]: 2, "b": 3, length: 4 })')).to.equal('o1');
+      Code.expect(overall('Array.from([, 1])')).to.equal('o1');
+      Code.expect(overall('Array.from([...x])')).to.equal('on');
       Code.expect(overall('encodeURIComponent(s)')).to.equal('on');
       Code.expect(overall('Object.freeze([1, 2])')).to.equal('o1');
     });
@@ -401,6 +443,74 @@ lab.experiment('complexity analyzer', () => {
     });
   });
 
+  lab.experiment('callbacks', () => {
+    const setup = 'function lin(x) { for (var i = 0; i < x.length; i++) {} } ' +
+      'function each(l, f) { for (var i = 0; i < l.length; i++) f(l[i]); } ' +
+      'function once(f) { f(); } ' +
+      'function pass(l, g) { each(l, g); } ' +
+      'function pair(f, g) { f(); g(); } ' +
+      'var inc = function (v) { return v + 1; }; ' +
+      'function viaDestructuring({ a }, f) { f(); }';
+
+    lab.test('a callback parameter costs what the function passed at the call site costs', () => {
+      Code.expect(overall('each(x, function (v) {});', { setup })).to.equal('on');
+      Code.expect(overall('each(x, (v) => v);', { setup })).to.equal('on');
+      Code.expect(overall('each(x, inc);', { setup })).to.equal('on');
+      Code.expect(overall('each(x, lin);', { setup })).to.equal('on2');
+      Code.expect(overall('each(x, function (v) { lin(x); });', { setup })).to.equal('on2');
+      Code.expect(overall('once(function () { lin(x); });', { setup })).to.equal('on');
+      Code.expect(overall('once(lin);', { setup })).to.equal('on');
+      Code.expect(overall('pair(function () {}, function () { lin(x); });', { setup })).to.equal('on');
+    });
+
+    lab.test('callbacks can be forwarded through other functions', () => {
+      Code.expect(overall('pass(x, function (v) {});', { setup })).to.equal('on');
+      Code.expect(overall('pass(x, lin);', { setup })).to.equal('on2');
+    });
+
+    lab.test('callbacks that cannot be resolved stay unknown', () => {
+      Code.expect(overall('each(x, mystery);', { setup })).to.equal('unknown');
+      Code.expect(overall('each(x);', { setup })).to.equal('unknown');
+      Code.expect(overall('each(x, obj.method);', { setup })).to.equal('unknown');
+      Code.expect(overall('viaDestructuring(o, inc);', { setup })).to.equal('o1');
+      Code.expect(overall('function run(g) { g(); } run(mystery);')).to.equal('unknown');
+    });
+  });
+
+  lab.experiment('numeric arguments', () => {
+    const setup = 'function count(n) { var s = 0; for (var i = 0; i < n; i++) { s++; } return s; } ' +
+      'function grid(n, m) { for (var i = 0; i < n; i++) { for (var j = 0; j < m; j++) {} } } ' +
+      'function fact(n) { return n <= 1 ? 1 : n * fact(n - 1); } ' +
+      'function wrap(n) { return count(n); } ' +
+      'var K = 50; var L = 5; L++;';
+
+    lab.test('a numeric literal argument is a value, so loops bounded by it are constant', () => {
+      Code.expect(overall('count(1000);', { setup })).to.equal('o1');
+      Code.expect(overall('count(K);', { setup })).to.equal('o1');
+      Code.expect(overall('grid(10, 20);', { setup })).to.equal('o1');
+      Code.expect(overall('wrap(5);', { setup })).to.equal('o1');
+    });
+
+    lab.test('only the parameters bound to constants are constant', () => {
+      Code.expect(overall('grid(10, m);', { setup })).to.equal('on');
+      Code.expect(overall('grid(n, 10);', { setup })).to.equal('on');
+      Code.expect(overall('grid(n, m);', { setup })).to.equal('on2');
+    });
+
+    lab.test('sizes, reassigned variables and unknown values stay linear', () => {
+      Code.expect(overall('count(data.length);', { setup })).to.equal('on');
+      Code.expect(overall('count(k);', { setup })).to.equal('on');
+      Code.expect(overall('count(L);', { setup })).to.equal('on');
+      Code.expect(overall('count(-n);', { setup })).to.equal('on');
+      Code.expect(overall('wrap(k);', { setup })).to.equal('on');
+    });
+
+    lab.test('recursion on a number keeps its shape', () => {
+      Code.expect(overall('fact(10);', { setup })).to.equal('on');
+      Code.expect(overall('fib(30);', { setup: 'function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }' })).to.equal('higher');
+    });
+  });
+
   lab.experiment('recursion', () => {
     lab.test('linear recursion costs n', () => {
       Code.expect(overall('function sum(n) { return n === 0 ? 0 : n + sum(n - 1); } sum(10)')).to.equal('on');
@@ -492,7 +602,7 @@ lab.experiment('complexity analyzer', () => {
 
   lab.experiment('safety', () => {
     lab.test('syntax errors are unknown, never throw', () => {
-      Code.expect(analyzeTest(none, 'for (;;')).to.equal({ estimate: true, overall: 'unknown', calls: [] });
+      Code.expect(analyzeTest(none, 'for (;;', { engine: 'spec' })).to.equal({ estimate: true, version: complexity.VERSION, overall: 'unknown', calls: [], space: { overall: 'unknown', items: [], variables: [] } });
       Code.expect(analyzeTest(none, '<b>html</b>').overall).to.equal('unknown');
     });
 
@@ -592,6 +702,395 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(present('not json')).to.be.null();
       Code.expect(present({ overall: 'on' })).to.be.null();
       Code.expect(present('5')).to.be.null();
+    });
+  });
+
+  lab.experiment('engine specific built-ins', () => {
+    const page = {
+      setup: 'var data = []; for (var i = 0; i < 3; i++) data.push(i); var text = data.join(","); var lit = "abc"; lit = lit + text; var width = 5;'
+    };
+    const rate = (code, engine) => {
+      const result = analyzeTest(page, code, { engine });
+      return `${result.overall}/${result.space.overall}`;
+    };
+    const both = (code) => `${rate(code, 'spec')} ${rate(code, 'v8')}`;
+
+    lab.test('both rule sets are analyzed and stored by default', () => {
+      const result = analyzeTest(page, 'data.shift();');
+      Code.expect(result.overall).to.equal('on');
+      Code.expect(result.engines.v8.overall).to.equal('o1');
+      Code.expect(result.engines.v8.estimate).to.not.exist();
+      Code.expect(analyzeTest(page, 'data.shift();', { engine: 'v8' }).engines).to.not.exist();
+    });
+
+    lab.test('shift, trim and string slices are cheaper in V8', () => {
+      Code.expect(both('data.shift();')).to.equal('on/o1 o1/o1');
+      Code.expect(both('text.trim(); text.trimStart(); text.trimEnd();')).to.equal('on/on o1/o1');
+      Code.expect(both('text.substring(1); text.substr(1, 2);')).to.equal('on/on o1/o1');
+      Code.expect(both('lit.slice(2, 5);')).to.equal('on/on o1/o1');
+      Code.expect(both('"a literal".slice(2);')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('`a`.slice(2);')).to.equal('o1/o1 o1/o1');
+    });
+
+    lab.test('slicing something that is not a stored string still copies', () => {
+      Code.expect(both('data.slice(1);')).to.equal('on/on on/on');
+      Code.expect(both('text.slice(1);')).to.equal('on/on on/on');
+      Code.expect(both('(lit + width).slice(1); (lit + width).substring(1);')).to.equal('on/on on/on');
+      Code.expect(both('text.concat(lit).substring(1);')).to.equal('on/on on/on');
+      Code.expect(both('obj.name.substring(1); this.name.substr(1);')).to.equal('on/on o1/o1');
+      Code.expect(both('mystery(text).slice(1);')).to.equal('unknown/unknown unknown/unknown');
+    });
+
+    lab.test('repeat and padding cost their length argument', () => {
+      Code.expect(both('"0".repeat(32);')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('"0".repeat(width);')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('"0".repeat(data.length);')).to.equal('on/on ologn/ologn');
+      Code.expect(both('text.repeat(3);')).to.equal('on/on o1/o1');
+      Code.expect(both('text.padStart(data.length, "0");')).to.equal('on/on ologn/ologn');
+      Code.expect(both('text.padEnd(8);')).to.equal('on/on o1/o1');
+      Code.expect(both('text.padStart();')).to.equal('on/on o1/o1');
+    });
+
+    lab.test('iterators are created lazily', () => {
+      Code.expect(both('data.keys(); data.values(); data.entries();')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('for (var k of data.keys()) { x++; }')).to.equal('on/o1 on/o1');
+    });
+
+    lab.test('spreading into a call passes every element', () => {
+      Code.expect(both('Math.max(...data);')).to.equal('on/on on/on');
+      Code.expect(both('Math.max(...[1, 2]);')).to.equal('o1/o1 o1/o1');
+    });
+
+    lab.test('Object.assign reads its sources', () => {
+      Code.expect(both('Object.assign({}, { a: 1 });')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('Object.assign({}, { ...data });')).to.equal('on/on on/on');
+      Code.expect(both('Object.assign({}, data);')).to.equal('on/o1 on/o1');
+      Code.expect(both('Object.keys(data);')).to.equal('on/on on/on');
+    });
+
+    lab.test('regular expressions with nested quantifiers can backtrack exponentially', () => {
+      Code.expect(both('/^(a+)+$/.test(text);')).to.equal('higher/o1 higher/o1');
+      Code.expect(both('text.match(/(\\w*\\s)*end/);')).to.equal('higher/on higher/on');
+      Code.expect(both('/(a+){2,}b/.exec(text);')).to.equal('higher/o1 higher/o1');
+      Code.expect(both('text.replace(pattern, "b"); text.split(); lit.match(mystery);')).to.equal('on/on on/on');
+      Code.expect(both('/^(ab)+$/.test(text); /a+b*/.test(text); text.replace("a", "b");')).to.equal('on/on on/on');
+    });
+
+    lab.test('sets compare in linear time', () => {
+      Code.expect(both('new Set(data).union(new Set(data));')).to.equal('on/on on/on');
+    });
+  });
+
+  lab.experiment('aliases, borrowed methods and stored functions', () => {
+    const page = {
+      setup: [
+        'var data = []; for (var i = 0; i < 3; i++) data.push(i);',
+        'var Kind = Float64Array; var Other = Kind; var Mine = function () {}; var Alias = Mine;',
+        'function work(x) { for (var i = 0; i < data.length; i++) { x++; } return x; }',
+        'var bound = work.bind(null, 1); var plain = 5;',
+        'var cheap = function () { return 1; }; var costly = function () { return data.slice(); };',
+        'var handlers = [cheap, costly]; var literal = [cheap]; var seen = 0;',
+        'var target = new EventTarget();',
+        'handlers.forEach(function (h) { target.addEventListener("tick", function (event) { h(event.detail); }); });'
+      ].join('\n')
+    };
+    const run = (code) => {
+      const result = analyzeTest(page, code, { engine: 'v8' });
+      return `${result.overall}/${result.space.overall}`;
+    };
+
+    lab.test('a variable standing for a built-in is that built-in', () => {
+      Code.expect(run('new Kind(data.length);')).to.equal('on/on');
+      Code.expect(run('new Other(data.length);')).to.equal('on/on');
+      Code.expect(run('Kind.from(data);')).to.equal('on/on');
+      Code.expect(run('Kind.from(data, function (x) { return x; });')).to.equal('on/on');
+      Code.expect(run('Kind.of(1, 2);')).to.equal('o1/o1');
+      Code.expect(run('new Alias();')).to.equal('o1/o1');
+      Code.expect(run('new plain();')).to.equal('unknown/unknown');
+      Code.expect(run('new Mine();')).to.equal('o1/o1');
+      Code.expect(run('var K = Float64Array; K = Int8Array; new K(data.length);')).to.equal('unknown/unknown');
+      Code.expect(run('new Float64Array(3);')).to.equal('o1/o1');
+    });
+
+    lab.test('Array(n) allocates like new Array(n)', () => {
+      Code.expect(run('Array(data.length);')).to.equal('on/on');
+      Code.expect(run('Array(3);')).to.equal('o1/o1');
+      Code.expect(run('function Array() { return 1; } Array(data.length);')).to.equal('o1/o1');
+    });
+
+    lab.test('bound functions run the original', () => {
+      Code.expect(run('bound(1);')).to.equal('on/o1');
+      Code.expect(run('Promise.resolve(1).then(work.bind(null, 1));')).to.equal('on/o1');
+      Code.expect(run('Promise.resolve(1).then(function () { return 1; }.bind(null));')).to.equal('o1/o1');
+    });
+
+    lab.test('built-in methods can be borrowed with call and apply', () => {
+      Code.expect(run('Array.prototype.push.apply(data, data);')).to.equal('on/on');
+      Code.expect(run('Array.prototype.push.apply(data);')).to.equal('o1/o1');
+      Code.expect(run('Object.prototype.hasOwnProperty.call(data, "x");')).to.equal('o1/o1');
+      Code.expect(run('Array.prototype.slice.call(data, 1);')).to.equal('on/on');
+      Code.expect(run('Array.prototype.indexOf.call();')).to.equal('o1/o1');
+      Code.expect(run('Array.prototype.frobnicate.call(data);')).to.equal('unknown/unknown');
+      Code.expect(run('function f() { return 1; } f.call(null); f.apply(null);')).to.equal('o1/o1');
+    });
+
+    lab.test('a call through an array of functions is the most expensive of them', () => {
+      Code.expect(run('handlers[0](1);')).to.equal('on/on');
+      Code.expect(run('literal[0](1);')).to.equal('o1/o1');
+      Code.expect(run('handlers.forEach(function (h) { h(1); });')).to.equal('on/on');
+      Code.expect(run('literal.forEach(function (h) { h(1); });')).to.equal('o1/o1');
+      Code.expect(run('handlers.forEach(function () { return 1; });')).to.equal('o1/o1');
+      Code.expect(run('handlers.forEach(function ([h]) { h(1); });')).to.equal('unknown/unknown');
+      Code.expect(run('unknownList.forEach(function (h) { h(1); });')).to.equal('unknown/unknown');
+      Code.expect(run('mystery[0](1);')).to.equal('unknown/unknown');
+    });
+
+    lab.test('dispatching an event runs the registered listeners', () => {
+      Code.expect(run('target.dispatchEvent(new CustomEvent("tick", { detail: 1 }));')).to.equal('on/on');
+      Code.expect(run('new Event("x"); new EventTarget();')).to.equal('o1/o1');
+      Code.expect(analyzeTest({ setup: 'var t = new EventTarget();' }, 't.dispatchEvent(new Event("x"));').overall).to.equal('o1');
+      Code.expect(analyzeTest({ setup: 'function dispatchEvent() { return 1; }' }, 'x.dispatchEvent(1);').overall).to.equal('o1');
+    });
+
+    lab.test('functions collected from loops, declarations and odd code', () => {
+      const loops = {
+        setup: [
+          'var list = []; var tail = [];',
+          'function declared() { return 1; }',
+          'for (var i = 0; i < 3; i++) { list.push(function () { return 1; }); }',
+          'list.push(declared, 5, mystery);',
+          'tail = [declared, , function () { return list.slice(); }];',
+          'var holder = {}; holder.run = function () { return 1; };',
+          'var ok = [function () { return 1; }];',
+          'var el = {}; el.addEventListener("x");',
+          'el.addEventListener("x", 5);',
+          'ok.forEach(5);',
+          'ok.forEach();',
+          'ok.forEach(function () { return 1; });',
+          'ok.forEach(function ([a]) { return a; });',
+          'function skipped() { ok.push(function () { return 1; }); }'
+        ].join('\n')
+      };
+      Code.expect(analyzeTest(loops, 'list[0]();', { engine: 'v8' }).overall).to.equal('o1');
+      Code.expect(analyzeTest(loops, 'tail[0]();', { engine: 'v8' }).overall).to.equal('on');
+      Code.expect(analyzeTest(loops, 'el.dispatchEvent(1);', { engine: 'v8' }).overall).to.equal('o1');
+    });
+
+    lab.test('less usual shapes of calls', () => {
+      Code.expect(run('plain(1);')).to.equal('unknown/unknown');
+      Code.expect(run('var q; q(1);')).to.equal('unknown/unknown');
+      Code.expect(run('a.b[0](1);')).to.equal('unknown/unknown');
+      Code.expect(run('Promise.resolve(1).then(obj.method(1));')).to.equal('unknown/unknown');
+      Code.expect(run('Promise.resolve(1).then(obj[key](1));')).to.equal('unknown/unknown');
+      Code.expect(run('function run(cb) { cb(); } run(work.bind(null));')).to.equal('on/o1');
+      Code.expect(run('x[y].call(1);')).to.equal('unknown/unknown');
+      Code.expect(run('var a1 = Float64Array, a2 = a1, a3 = a2, a4 = a3, a5 = a4; new a5(3);')).to.equal('unknown/unknown');
+      Code.expect(analyzeTest({ setup: 'var holder = {}; holder.run = function () { return 1; };' }, 'x.run.call(1);', { engine: 'v8' }).overall).to.equal('o1');
+    });
+
+    lab.test('collecting stops on hostile input', () => {
+      const deep = { setup: 'var a = []; ' + '['.repeat(300) + ']'.repeat(300) + '; a.push(function () {});' };
+      Code.expect(analyzeTest(deep, 'a[0]();', { engine: 'v8' }).overall).to.be.a.string();
+      Code.expect(analyzeTest({ setup: 'var a = []; a.push(function () {});' }, 'a[0]();', { engine: 'v8', maxSteps: 3 }).overall).to.equal('unknown');
+    });
+  });
+
+  lab.experiment('DOM methods', () => {
+    const page = { setup: 'var host = document.getElementById("host"); var items = []; for (var i = 0; i < 3; i++) items.push(i); var markup = items.join("");' };
+    const rate = (code, engine) => {
+      const result = analyzeTest(page, code, { engine });
+      return `${result.overall}/${result.space.overall}`;
+    };
+    const both = (code) => `${rate(code, 'spec')} ${rate(code, 'v8')}`;
+
+    lab.test('creating nodes is constant', () => {
+      Code.expect(both('document.createElement("li"); document.createTextNode("x"); document.createComment("c");')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('document.createDocumentFragment(); document.getElementById("a");')).to.equal('o1/o1 o1/o1');
+    });
+
+    lab.test('inserting a lone node is constant, a subtree is linear', () => {
+      Code.expect(both('var li = document.createElement("li"); host.appendChild(li);')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('host.appendChild(document.createElement("li"));')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('host.insertBefore(document.createTextNode("x"), null); host.removeChild(host.firstChild);')).to.equal('on/on on/on');
+      Code.expect(both('var f = document.createDocumentFragment(); host.appendChild(f);')).to.equal('on/on on/on');
+      Code.expect(both('var ul = document.createElement("ul"); var li = document.createElement("li"); ul.appendChild(li); host.appendChild(ul);')).to.equal('on/on on/on');
+      Code.expect(both('var ul = document.createElement("ul"); ul.innerHTML = markup; host.replaceChild(ul, host.firstChild);')).to.equal('on/on on/on');
+      Code.expect(both('host.appendChild(mystery);')).to.equal('on/on on/on');
+      Code.expect(both('host.appendChild();')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('var n = parseInt(1); host.appendChild(n);')).to.equal('on/on on/on');
+    });
+
+    lab.test('a node that gets children appended is no longer a lone node', () => {
+      Code.expect(both('var a = document.createElement("a"); a.insertAdjacentHTML("beforeend", "<b></b>"); host.appendChild(a);')).to.equal('on/on on/on');
+      Code.expect(both('var a = document.createElement("a"); a.append(host); a.prepend(host); host.appendChild(a);')).to.equal('unknown/unknown unknown/unknown');
+      Code.expect(both('var a = document.createElement("a"); a.textContent = "x"; a.title = "t"; this.x = 1; host.appendChild(a);')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('var a = document.createElement("a"); a.replaceChild(host, host); host.appendChild(a);')).to.equal('on/on on/on');
+      Code.expect(both('var a = document.createElement("a"); a.insertBefore(host, null); host.appendChild(a);')).to.equal('on/on on/on');
+    });
+
+    lab.test('markup is parsed in linear time', () => {
+      Code.expect(both('host.insertAdjacentHTML("beforeend", markup);')).to.equal('on/on on/on');
+      Code.expect(both('host.insertAdjacentHTML("beforeend", "<b></b>");')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('host.insertAdjacentHTML("beforeend");')).to.equal('o1/o1 o1/o1');
+    });
+
+    lab.test('nodes appended in a loop add up in memory', () => {
+      Code.expect(both('var ul = document.createElement("ul"); for (var i = 0; i < items.length; i++) { ul.appendChild(document.createElement("li")); }')).to.equal('on/on on/on');
+    });
+  });
+
+  lab.experiment('more built-ins', () => {
+    const page = { setup: 'var value = 5, width = 32, data = []; for (var i = 0; i < 3; i++) data.push(i);' };
+    const both = (code) => {
+      const result = analyzeTest(page, code);
+      return `${result.overall}/${result.space.overall}`;
+    };
+
+    lab.test('number, date and Intl formatting is constant', () => {
+      Code.expect(both('value.toLocaleString("en-US", { minimumIntegerDigits: width, useGrouping: false });')).to.equal('o1/o1');
+      Code.expect(both('new Intl.NumberFormat("en-US").format(value);')).to.equal('o1/o1');
+      Code.expect(both('new Date().toISOString(); new Date(0).getFullYear(); value.toPrecision(3);')).to.equal('o1/o1');
+    });
+
+    lab.test('promises run their callback once', () => {
+      Code.expect(both('Promise.resolve(1).then(function (x) { return x; });')).to.equal('o1/o1');
+      Code.expect(both('Promise.resolve(1).then(function (x) { return data.slice(); });')).to.equal('on/on');
+      Code.expect(both('Promise.reject(1).catch(function (x) { return x; }).finally(function () { return 1; });')).to.equal('o1/o1');
+      Code.expect(both('Promise.all(data);')).to.equal('on/on');
+      Code.expect(both('new Promise(function () { return data.slice(); });')).to.equal('on/on');
+      Code.expect(both('new Promise();')).to.equal('o1/o1');
+    });
+
+    lab.test('timers, object helpers and trimming are known', () => {
+      Code.expect(both('setTimeout(function () { return 1; }, 0); Object.hasOwn(data, "x"); Object.isFrozen(data);')).to.equal('o1/o1');
+      Code.expect(both('" a ".trimStart();')).to.equal('o1/o1');
+      Code.expect(both('data.trimStart();')).to.equal('on/on');
+    });
+
+    lab.test('unknown methods are still unknown', () => {
+      Code.expect(both('mystery.frobnicate();')).to.equal('unknown/unknown');
+      Code.expect(both('new a.b.C();')).to.equal('unknown/unknown');
+      Code.expect(both('var Intl = {}; new Intl.NumberFormat();')).to.equal('unknown/unknown');
+    });
+  });
+
+  lab.experiment('memory estimate', () => {
+    const page = { setup: 'var data = []; for (var i = 0; i < 100; i++) data.push(i);\nfunction fact(n) { return n <= 1 ? 1 : n * fact(n - 1); }\nfunction half(a, lo, hi) { if (lo > hi) return -1; var m = (lo + hi) >>> 1; return half(a, lo, m - 1); }\nfunction fill(out, x) { out.push(x); }' };
+    const space = (code, p = page) => analyzeTest(p, code).space;
+    const names = (code, p = page) => space(code, p).variables.map((v) => `${v.code}:${v.cls}`);
+
+    lab.test('constant memory stays constant', () => {
+      Code.expect(space('data.indexOf(5); Math.max(1, 2); var k = [1, 2, 3].map(function (x) { return x; });').overall).to.equal('o1');
+      Code.expect(space('Object.assign({}, data); Object.freeze(data);').overall).to.equal('o1');
+    });
+
+    lab.test('copies and growing collections cost their size', () => {
+      Code.expect(space('var c = data.slice(); var m = data.map(function (x) { return x; });').overall).to.equal('on');
+      Code.expect(space('var a = Array.from(data, function (x) { return x; });').overall).to.equal('on');
+      Code.expect(space('var s = [...data]; var o = { ...data };').overall).to.equal('on');
+      Code.expect(space('data.sort(); data.forEach(function (x) { return x; });').overall).to.equal('on');
+      Code.expect(space('var out = []; for (var i = 0; i < data.length; i++) { out.push(i); }').overall).to.equal('on');
+      Code.expect(space('var str = ""; for (var i = 0; i < data.length; i++) { str += "x"; str = str + "y"; }').overall).to.equal('on');
+      Code.expect(space('var a = []; for (var i = 0; i < data.length; i++) { a = a.concat([i]); a = [...a, i]; a[i + 1] = 1; }').overall).to.equal('on');
+      Code.expect(space('var m = []; for (var i = 0; i < data.length; i++) { for (var j = 0; j < data.length; j++) { m.push(i); } }').overall).to.equal('on2');
+      Code.expect(space('var m = []; for (var i = 0; i < data.length; i++) { for (var j = 0; j < data.length; j++) { m.push(i); } m.splice(0, 0, 1, 2); }').overall).to.equal('on2');
+    });
+
+    lab.test('temporaries and per-iteration collections are not multiplied by the loop', () => {
+      Code.expect(space('for (var i = 0; i < data.length; i++) { var t = data.slice(); }').overall).to.equal('on');
+      Code.expect(space('for (var i = 0; i < data.length; i++) { var t = []; t.push(i); }').overall).to.equal('o1');
+      Code.expect(space('for (var i = 0; i < data.length; i++) { var t = []; for (var j = 0; j < data.length; j++) { t.push(j); } }').overall).to.equal('on');
+      Code.expect(space('for (var i = 0; i < data.length; i++) { for (var j = 0; j < data.length; j++) { var t = []; t.push(j); } }').overall).to.equal('o1');
+      Code.expect(space('while (data.length > 1) { data.pop(); }').overall).to.equal('o1');
+    });
+
+    lab.test('growth through a called function reaches the calling loop', () => {
+      const out = space('var r = []; for (var i = 0; i < data.length; i++) { fill(r, i); }');
+      Code.expect(out.overall).to.equal('on');
+      Code.expect(space('for (var i = 0; i < data.length; i++) { var q = []; fill(q, i); }').overall).to.equal('o1');
+    });
+
+    lab.test('recursion costs its depth', () => {
+      Code.expect(space('fact(data.length);').overall).to.equal('on');
+      Code.expect(space('half(data, 0, data.length);').overall).to.equal('ologn');
+    });
+
+    lab.test('unknown calls are unknown', () => {
+      Code.expect(space('mystery(data);').overall).to.equal('unknown');
+      Code.expect(analyzeTest(page, 'var = ;').space).to.equal({ overall: 'unknown', items: [], variables: [] });
+    });
+
+    lab.test('calls and variables are rated', () => {
+      const out = space('var out = []; var small = 1; var c = data.slice(); for (var i = 0; i < data.length; i++) { out.push(i); }');
+      Code.expect(out.items.map((c) => `${c.code}:${c.cls}`)).to.equal(['data.slice():on', 'out.push(i):on']);
+      Code.expect(names('var out = []; var small = 1; var c = data.slice(); for (var i = 0; i < data.length; i++) { out.push(i); }')).to.equal(['out:on', 'c:on']);
+      Code.expect(names('function f() { var inner = data.slice(); } this.x.push(1); getList().push(1); f();')).to.equal([]);
+    });
+
+    lab.test('recognises the other ways of growing a collection', () => {
+      const loop = (body) => `var a = []; var s = \`t\`; var q = 'q'; var o = {}; var u = 0; for (var i = 0; i < data.length; i++) { ${body} }`;
+      Code.expect(space(loop('[a, o] = [o, a];')).overall).to.equal('o1');
+      Code.expect(space(loop('o.k = 1; u += 1; u = u + 1; a.length = 0; a[0] = 1;')).overall).to.equal('o1');
+      Code.expect(space(loop('s += i;')).overall).to.equal('on');
+      Code.expect(space(loop('q = q + i;')).overall).to.equal('on');
+      Code.expect(space(loop('q = i; a = [...[1], 1]; a = [, 1]; a = [1].concat(a);')).overall).to.equal('o1');
+      Code.expect(space(loop('a = [...a, i];')).overall).to.equal('on');
+      Code.expect(space(loop('a.splice(0, 0, i);')).overall).to.equal('on');
+      Code.expect(space(loop('[1, 2].splice(0, 1);')).overall).to.equal('o1');
+      Code.expect(space(loop('o[i] = i;')).overall).to.equal('on');
+      Code.expect(space(loop('q = (q + "x") + i; q = u + q; q = q + u;')).overall).to.equal('on');
+      Code.expect(space(loop('u = u + q;')).overall).to.equal('o1');
+      Code.expect(space(loop('u -= 1; u *= 2; u = u.toString(); u = parseInt(u); u += i + 1;')).overall).to.equal('o1');
+      Code.expect(space(loop('u += i + "x"; u += "x" + i;')).overall).to.equal('on');
+      Code.expect(space('var w; for (var i = 0; i < n; i++) { w += "a"; z += "a"; z = z + "a"; }').overall).to.equal('on');
+      Code.expect(space('var w; for (var i = 0; i < n; i++) { w = w + i; z = z + i; }').overall).to.equal('o1');
+    });
+
+    lab.test('writing into an array that already has its size is not growth', () => {
+      const loops = (init) => `${init} for (var i = 0; i < data.length; i++) { for (var j = 0; j < data.length; j++) { a[j + 1] = a[j]; } }`;
+      Code.expect(space(loops('var a = data.slice();')).overall).to.equal('on');
+      Code.expect(space(loops('var a = new Array(data.length);')).overall).to.equal('on');
+      Code.expect(space(loops('function f(a) {') + ' } f(data);').overall).to.equal('o1');
+      Code.expect(space(loops('var a = Object.create(null);')).overall).to.equal('on2');
+      Code.expect(space(loops('var a = new Array();')).overall).to.equal('on2');
+      Code.expect(space(loops('var a = {};')).overall).to.equal('on2');
+      Code.expect(space(loops('var a;')).overall).to.equal('on2');
+      Code.expect(space(loops('')).overall).to.equal('o1');
+      Code.expect(space('for (var i = 0; i < data.length; i++) { new Foo()[i] = 1; }').overall).to.equal('unknown');
+      Code.expect(space(loops('var a = Math.abs(1); var b = new Array(3); var d = [].concat();')).overall).to.equal('o1');
+      Code.expect(space(loops('function a() {}')).overall).to.equal('o1');
+      Code.expect(space(loops('var a = new Set();')).overall).to.equal('o1');
+      Code.expect(space(loops('var a = Object.is(1, 2);')).overall).to.equal('o1');
+      Code.expect(space(loops('function g() { return 1; } var a = g();')).overall).to.equal('o1');
+    });
+
+    lab.test('growth inside functions is attributed to the right collection', () => {
+      const grow = { setup: 'var shared = [];\nfunction keep(x) { shared.push(x); }\nfunction local(x) { var l = []; l.push(x); return l; }\nfunction into(target, x, extra) { target.push(x); }' };
+      Code.expect(space('for (var i = 0; i < 9; i++) { keep(i); } for (var j = 0; j < n; j++) { keep(j); }', grow).overall).to.equal('on');
+      Code.expect(space('for (var i = 0; i < n; i++) { local(i); }', grow).overall).to.equal('o1');
+      Code.expect(space('var mine = []; for (var i = 0; i < n; i++) { into(mine, i); }', grow).overall).to.equal('on');
+      Code.expect(space('var mine = []; for (var i = 0; i < n; i++) { into(); }', grow).overall).to.equal('on');
+    });
+
+    lab.test('stops on hostile input', () => {
+      const deep = '['.repeat(300) + ']'.repeat(300);
+      Code.expect(analyzeTest(page, 'var x = ' + deep + ';').space.overall).to.be.a.string();
+      Code.expect(analyzeTest(page, 'var a = []; for (var i = 0; i < n; i++) { a.push(i); }', { maxSteps: 5 }).space.overall).to.equal('unknown');
+    });
+
+    lab.test('is presented with the call ratings', () => {
+      const shown = present(analyzeTest(page, 'var out = []; for (var i = 0; i < data.length; i++) { out.push(i); }'));
+      Code.expect(shown.space.overall.cls).to.equal('on');
+      Code.expect(shown.space.items.map((v) => v.code)).to.equal(['out.push(i)', 'out']);
+      Code.expect(present({ overall: 'o1', calls: [] }).space).to.be.null();
+      const stored = { overall: 'on', calls: [{ code: 'a.shift()', cls: 'on' }], engines: { v8: { overall: 'o1', calls: [{ code: 'a.shift()', cls: 'o1' }] } } };
+      Code.expect(present(stored).overall.cls).to.equal('on');
+      Code.expect(present(stored, 'spec').overall.cls).to.equal('on');
+      Code.expect(present(stored, 'v8').overall.cls).to.equal('o1');
+      Code.expect(present(stored, 'v8').calls[0].cls).to.equal('o1');
+      Code.expect(present({ overall: 'on', calls: [] }, 'v8').overall.cls).to.equal('on');
+      Code.expect(present(null, 'v8')).to.be.null();
+      Code.expect(present({ overall: 'o1', calls: [], space: { overall: 'on', items: [] } }).space.items).to.equal([]);
     });
   });
 });

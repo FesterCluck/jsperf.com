@@ -169,22 +169,17 @@ lab.experiment('web/test plugin', function () {
       Code.expect(rows.eq(0).find('#results-1').length).to.equal(1);
       Code.expect(rows.eq(1).hasClass('complexity-row')).to.be.true();
       Code.expect(rows.eq(3).hasClass('complexity-row')).to.be.true();
-      Code.expect(rows.eq(1).attr('title')).to.include('Estimated');
 
       const first = rows.eq(1);
       Code.expect(first.find('th .call-list code').map((i, el) => $(el).text()).get()).to.equal(['build(shared)', 'find(x)', 'weird(x)']);
       Code.expect(first.find('th li').last().text()).to.include('+3 more');
       Code.expect(first.find('td.complexity-breakdown .bigo-graph').map((i, el) => $(el).attr('class')).get()).to.equal(['bigo-graph bigo-on', 'bigo-graph bigo-ologn', 'bigo-graph bigo-unknown']);
       Code.expect(first.find('td.complexity-breakdown use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-ologn', '#curve-unknown']);
-      Code.expect(first.find('td.complexity-breakdown .bigo-graph').first().attr('title')).to.equal('O(n) (linear), estimated');
       Code.expect(first.find('td.complexity-total .bigo-graph').hasClass('bigo-on')).to.be.true();
-      Code.expect(first.find('td.complexity-total small').first().text()).to.equal('Overall: O(n)');
-      Code.expect(first.find('td.complexity-total small').last().text()).to.equal('estimated');
       Code.expect(first.hasClass('complexity-unknown')).to.be.false();
 
       const second = rows.eq(3);
       Code.expect(second.find('th').text()).to.include('no function calls');
-      Code.expect($('.complexity-legend').text()).to.include('estimates');
     });
 
     lab.test('marks undecidable results as unknown', async function () {
@@ -195,8 +190,6 @@ lab.experiment('web/test plugin', function () {
       const row = $('tr.complexity-row');
       Code.expect(row.hasClass('complexity-unknown')).to.be.true();
       Code.expect(row.find('td.complexity-total .bigo-graph').hasClass('bigo-unknown')).to.be.true();
-      Code.expect(row.find('td.complexity-total small').first().text()).to.equal('Overall');
-      Code.expect(row.find('td.complexity-total small').last().text()).to.equal('unknown');
     });
 
     lab.test('escapes code in the call list and survives a stored JSON string', async function () {
@@ -214,7 +207,6 @@ lab.experiment('web/test plugin', function () {
       const $ = cheerio.load((await server.inject(request)).payload);
       Code.expect($('tr.complexity-row').length).to.equal(0);
       Code.expect($('#bigo-guides').length).to.equal(0);
-      Code.expect($('.complexity-legend').length).to.equal(0);
     });
 
     lab.test('works under a base path', async function () {

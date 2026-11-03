@@ -17,7 +17,7 @@ const register = (server, options) => {
     return pagesService.getBySlug(request.params.testSlug, request.params.rev || 1)
       .then(values => {
         const page = values[0];
-        page.test = values[1].map((test) => Object.assign({}, test, { complexityView: complexity.present(test.complexity) }));
+        page.test = values[1].map((test) => Object.assign({}, test, { complexityView: complexity.present(test.complexity, userAgent.engine(request.headers['user-agent'])) }));
         page.revisions = values[2];
         page.comments = values[3];
 

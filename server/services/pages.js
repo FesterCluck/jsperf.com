@@ -77,7 +77,7 @@ const register = (server, options) => {
 
   // tests saved before the complexity column existed are analyzed on first view and then persisted
   const fillMissingComplexity = async (page, tests) => {
-    const missing = tests.filter((test) => !test.complexity);
+    const missing = tests.filter((test) => !test.complexity || test.complexity.version !== complexity.VERSION);
     if (missing.length === 0) {
       return;
     }
