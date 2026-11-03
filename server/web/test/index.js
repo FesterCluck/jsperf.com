@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const Boom = require('@hapi/boom');
 const hljs = require('highlight.js');
 const regex = require('../../lib/regex');
@@ -10,6 +12,14 @@ const defaults = require('../../lib/defaults');
 const complexity = require('../../lib/complexity');
 const userAgent = require('../../lib/userAgent');
 const clientIp = require('../../lib/clientIp');
+
+// The runner is inlined into the frame document: the frame has an opaque origin, so a separate request for it
+// would be a cold, uncached connection that can fail independently of the page.
+let runner;
+const getRunner = () => {
+  runner = runner || fs.readFileSync(path.join(__dirname, '../../../public/_js/frame.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
+  return runner;
+};
 
 const register = (server, options) => {
   const pagesService = server.plugins['services/pages'];
@@ -204,7 +214,7 @@ const register = (server, options) => {
       page.test = values[1];
 
       return h
-        .view('test/frame', { page }, { layout: false })
+        .view('test/frame', { page, runner: getRunner() }, { layout: false })
         .header('Content-Security-Policy', 'sandbox allow-scripts');
     }
   });
