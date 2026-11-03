@@ -4,6 +4,7 @@ const sinon = require('sinon');
 const Qs = require('qs');
 const Support = require('../../../../support/server');
 const password = require('../../../../../server/lib/password');
+const defaults = require('../../../../../server/lib/defaults');
 const LocalPlugin = require('../../../../../server/web/auth/local');
 const QsPayloadPlugin = require('../../../../../server/lib/qsPayload');
 
@@ -55,6 +56,35 @@ lab.experiment('auth/local', () => {
       Code.expect(home.statusCode).to.equal(302);
     });
 
+    lab.test('locks out an address after repeated failures, and a success resets the count', async () => {
+      usersRepo.getByUsername.resolves({ id: 3, username: 'alice', passwordHash: await password.hash('correct horse') });
+
+      for (let i = 0; i < 9; i++) {
+        await post('/login', { username: 'alice', password: 'wrong' });
+      }
+
+      const ok = await post('/login', { username: 'alice', password: 'correct horse' });
+      Code.expect(ok.statusCode).to.equal(302);
+
+      for (let i = 0; i < 9; i++) {
+        await post('/login', { username: 'alice', password: 'wrong' });
+      }
+
+      await post('/login', { username: 'alice', password: 'wrong' });
+      const blocked = await post('/login', { username: 'alice', password: 'correct horse' });
+      Code.expect(blocked.statusCode).to.equal(429);
+      Code.expect(blocked.result).to.include(defaults.errors.auth.tooMany);
+    });
+
+    lab.test('malformed logins count as failures', async () => {
+      for (let i = 0; i < 10; i++) {
+        await post('/login', { username: '', password: '' });
+      }
+
+      const blocked = await post('/login', { username: 'alice', password: 'x' });
+      Code.expect(blocked.statusCode).to.equal(429);
+    });
+
     lab.test('rejects a wrong password', async () => {
       usersRepo.getByUsername.resolves({ id: 3, username: 'alice', passwordHash: await password.hash('correct horse') });
 
@@ -93,6 +123,16 @@ lab.experiment('auth/local', () => {
   });
 
   lab.experiment('register', () => {
+    lab.test('limits registrations per address', async () => {
+      for (let i = 0; i < 10; i++) {
+        await post('/register', { username: `user${i}`, password: 'correct horse' });
+      }
+
+      const blocked = await post('/register', { username: 'another', password: 'correct horse' });
+      Code.expect(blocked.statusCode).to.equal(429);
+      Code.expect(blocked.result).to.include(defaults.errors.auth.tooMany);
+    });
+
     lab.test('renders the registration form', async () => {
       const res = await server.inject('/register');
 

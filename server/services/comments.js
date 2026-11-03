@@ -21,12 +21,6 @@ const register = (server, options) => {
     const id = await commentsRepo.create(comment);
     return Object.assign(comment, { id });
   });
-
-  server.expose('delete', function (commentId) {
-    server.log(['debug'], `${name}::delete: ${JSON.stringify(arguments)}`);
-
-    return commentsRepo.delete(commentId);
-  });
 };
 
 exports.plugin = {

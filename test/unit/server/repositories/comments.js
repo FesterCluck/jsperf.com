@@ -80,16 +80,4 @@ lab.experiment('Comments Repository', () => {
       Code.expect(err.message).to.equal(testErrMsg);
     });
   });
-
-  lab.experiment('delete', () => {
-    lab.test('should delete specific comment', async () => {
-      genericQueryStub.returns(Promise.resolve());
-      const id = 1;
-      await comments.delete(id);
-      Code.expect(genericQueryStub.calledWithExactly(
-        'DELETE FROM ?? WHERE id = ?',
-        ['comments', id]
-      )).to.be.true();
-    });
-  });
 });

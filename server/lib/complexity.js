@@ -32,7 +32,7 @@
 const acorn = require('acorn');
 const regex = require('./regex');
 
-const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12 };
+const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000 };
 
 class BudgetError extends Error {}
 
@@ -899,7 +899,7 @@ const safe = (fn, fallback) => {
  *
  * @param {{initHTML?: string, setup?: string, teardown?: string}} page
  * @param {Array<{code: string}>} tests
- * @param {object} [options] limits overrides (maxCodeLength, maxSteps, maxMs, maxDepth, maxCalls)
+ * @param {object} [options] limits overrides (maxCodeLength, maxSteps, maxMs, maxDepth, maxCalls, maxPageMs)
  * @returns {Array<{estimate: true, overall: string, calls: Array<{code: string, cls: string}>}>} one result per test
  */
 const analyzePage = (page, tests, options) => {
@@ -909,7 +909,9 @@ const analyzePage = (page, tests, options) => {
     .map(parse)
     .filter(Boolean);
 
-  return tests.map((test) => analyzeOne(String(test.code || ''), pageCode, limits));
+  // each test has its own budget, this one keeps a page with many tests from holding up the event loop
+  const deadline = Date.now() + limits.maxPageMs;
+  return tests.map((test) => Date.now() > deadline ? result('unknown', []) : analyzeOne(String(test.code || ''), pageCode, limits));
 };
 
 const analyzeOne = (code, pageCode, limits) => {

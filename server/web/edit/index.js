@@ -4,6 +4,7 @@ const Boom = require('@hapi/boom');
 const Hoek = require('@hapi/hoek');
 const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
+const ownership = require('../../lib/ownership');
 const schema = require('../../lib/schema');
 
 const register = (server) => {
@@ -32,9 +33,7 @@ const register = (server) => {
       const page = values[0];
       page.test = values[1];
       page.revision = values[2];
-      const own = request.yar.get('own') || {};
-      const isOwn = own[page.id];
-      const isAdmin = request.yar.get('admin');
+      const isOwn = ownership.isOwner(request, page);
 
       return h.view('edit/index', {
         headTitle: page.title,
@@ -45,7 +44,6 @@ const register = (server) => {
         },
         jsClass: true,
         isOwn,
-        isAdmin,
         page,
         mediumTextLength: defaults.mediumTextLength
       });
@@ -81,6 +79,9 @@ const register = (server) => {
         }).code(400);
       };
 
+      // the URL decides which page is edited and the session decides who is credited, never the form
+      request.payload.slug = request.params.testSlug;
+      request.payload.author = request.auth.credentials.username;
       request.payload.authorGitHub = request.auth.credentials.username;
 
       const { error, value: pageWithTests } = schema.testPage.validate(request.payload);
@@ -120,11 +121,13 @@ const register = (server) => {
       try {
         const values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
         const prevPage = values[0];
-        const own = request.yar.get('own') || {};
-        const isOwn = own[prevPage.id];
-        const isAdmin = request.yar.get('admin');
-        const update = !!(isAdmin || isOwn);
-        server.log('debug', `isAdmin: ${isAdmin} isOwn: ${isOwn} update: ${update}`);
+        const update = ownership.isOwner(request, prevPage);
+
+        if (!update) {
+          // a fork becomes a new, unpublished revision owned by whoever made it; they can publish it later
+          pageWithTests.visible = 'n';
+          pageWithTests.userID = request.auth.credentials.id;
+        }
 
         const resultingRevision = await pagesService.edit(pageWithTests, update, prevPage.maxRev, prevPage.id);
         const r = resultingRevision > 1 ? `/${resultingRevision}` : '';

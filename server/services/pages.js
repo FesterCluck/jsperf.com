@@ -53,7 +53,6 @@ const register = (server, options) => {
     } else {
       // someone is effectively forking your page so create a new one
       page.published = new Date();
-      // FIXME: if slug has changed from original page, revision needs to be set to 1 or else can't fetch page by slug root
       page.revision = resultingRevision;
       currentPageID = await pagesRepo.create(page);
     }
@@ -126,16 +125,6 @@ const register = (server, options) => {
     // find other revisions of page
     const revisions = await pagesRepo.findVisibleBySlug(slug);
     return [pages[0], revisions];
-  });
-
-  server.expose('deleteBySlug', function (slug, rev) {
-    server.log(['debug'], `${name}::deleteBySlug ${JSON.stringify(arguments)}`);
-
-    if (rev > 1) {
-      return pagesRepo.deleteOneRevisionBySlug(slug, rev);
-    } else {
-      return pagesRepo.deleteAllRevisionsBySlug(slug);
-    }
   });
 
   server.expose('publish', function (pageID) {

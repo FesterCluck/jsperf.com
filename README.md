@@ -36,6 +36,8 @@ COOKIE_PASS=password-should-be-32-characters
 # PORT=3000
 # bind address, e.g. 127.0.0.1 to only listen locally behind a reverse proxy (default: all interfaces)
 # HOST=127.0.0.1
+# read the client address from the last X-Forwarded-For entry; only enable behind a proxy that sets it (default: false)
+# TRUST_PROXY=true
 # serve the whole app under a URL path prefix, e.g. /next (default: empty = served at the root)
 # BASE_PATH=/next
 # name of the session cookie (default: sid-jsperf); change it if another app shares the domain

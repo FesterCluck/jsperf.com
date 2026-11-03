@@ -221,47 +221,6 @@ lab.experiment('Pages Repository', function () {
     });
   });
 
-  lab.experiment('deleteOneRevisionBySlug', () => {
-    lab.test('returns query results', async () => {
-      const slug = 'oh-yea';
-      const rev = 2;
-      genericQueryStub.onFirstCall().resolves({});
-      genericQueryStub.onSecondCall().resolves({ affectedRows: 1 });
-
-      const affected = await pages.deleteOneRevisionBySlug(slug, rev);
-      Code.expect(affected).to.equal(1);
-      Code.expect(genericQueryStub.onFirstCall().stub.calledWithExactly(
-        'DELETE FROM tests WHERE pageID IN (SELECT id FROM pages WHERE slug = ? AND revision = ?)',
-        [slug, rev]
-      )).to.be.true();
-
-      Code.expect(genericQueryStub.onSecondCall().stub.calledWithExactly(
-        'DELETE FROM pages WHERE slug = ? AND revision = ?',
-        [slug, rev]
-      )).to.be.true();
-    });
-  });
-
-  lab.experiment('deleteAllRevisionsBySlug', () => {
-    lab.test('returns query results', async () => {
-      const slug = 'oh-yea';
-      genericQueryStub.onFirstCall().resolves({});
-      genericQueryStub.onSecondCall().resolves({ affectedRows: 3 });
-
-      const affected = await pages.deleteAllRevisionsBySlug(slug);
-      Code.expect(affected).to.equal(3);
-      Code.expect(genericQueryStub.onFirstCall().stub.calledWithExactly(
-        'DELETE FROM tests WHERE pageID IN (SELECT id FROM pages WHERE slug = ?)',
-        [slug]
-      )).to.be.true();
-
-      Code.expect(genericQueryStub.onSecondCall().stub.calledWithExactly(
-        'DELETE FROM pages WHERE slug = ?',
-        [slug]
-      )).to.be.true();
-    });
-  });
-
   lab.experiment('getSitemap', function () {
     lab.test('returns an error when query fails', async function () {
       const testErrMsg = 'testing';

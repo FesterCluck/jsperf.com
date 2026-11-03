@@ -11,7 +11,6 @@ const register = (server) => {
 
       return h.view('popular/index', {
         headTitle: 'Popular test cases',
-        admin: false,
         recent: popular.recent,
         allTime: popular.allTime
       });

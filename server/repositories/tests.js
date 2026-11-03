@@ -16,7 +16,7 @@ const register = (server, options) => {
     let values = [];
     for (let i = 0, tl = tests.length; i < tl; i++) {
       const test = tests[i];
-      values.push('(' + pageID + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ', ' + json(test.complexity) + ')');
+      values.push('(' + db.escape(pageID) + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ', ' + json(test.complexity) + ')');
     }
 
     values = values.join(', ');
@@ -39,14 +39,14 @@ const register = (server, options) => {
         // ... if it's theirs to delete ...
         if (isOwn && test.testID) {
           server.log('info', `deleting test ${test.testID} from page ${pageID}`);
-          queries.push(db.genericQuery(`DELETE FROM ?? WHERE pageID = ${pageID} AND testID = ${test.testID}`, [table]));
+          queries.push(db.genericQuery('DELETE FROM ?? WHERE pageID = ? AND testID = ?', [table, pageID, test.testID]));
         }
         // ... otherwise skip over the test
       } else {
         if (isOwn && test.testID) {
-          queries.push(db.genericQuery(`UPDATE ?? SET title = ${db.escape(test.title)}, defer =  ${db.escape(test.defer)} , code =  ${db.escape(test.code)}, complexity = ${json(test.complexity)} WHERE pageID = ${pageID} AND testID = ${test.testID}`, [table]));
+          queries.push(db.genericQuery('UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?', [table, test.title, test.defer, test.code, test.complexity ? JSON.stringify(test.complexity) : null, pageID, test.testID]));
         } else {
-          queries.push(db.genericQuery(`INSERT INTO ?? (??) VALUES (${pageID}, ${db.escape(test.title)}, ${db.escape(test.defer)}, ${db.escape(test.code)}, ${json(test.complexity)})`, [table, columns]));
+          queries.push(db.genericQuery('INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)', [table, columns, pageID, test.title, test.defer, test.code, test.complexity ? JSON.stringify(test.complexity) : null]));
         }
       }
     });

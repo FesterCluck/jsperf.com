@@ -37,6 +37,14 @@ lab.experiment('Schema Library', function () {
         };
       });
 
+      lab.test('too many tests is invalid', async () => {
+        value.test = Array.from({ length: 51 }, (_, i) => ({ title: `t${i}`, code: `t=${i}` }));
+
+        const { error: err } = schema.testPage.validate(value);
+        Code.expect(err).to.exist();
+        Code.expect(err.details[0].path[0]).to.equal('test');
+      });
+
       lab.test('title with code is valid', async () => {
         value.test = [
           {

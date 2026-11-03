@@ -6,6 +6,7 @@ const config = require('./config');
 
 const basePath = config.get('/basePath') || '';
 const host = config.get('/host');
+const trustProxy = config.get('/trustProxy');
 const cookieName = config.get('/auth/session/name');
 // the cookie path is the prefix, or '/' when the app is mounted at the root
 const cookiePath = basePath || '/';
@@ -28,7 +29,7 @@ const manifest = {
     port: config.get('/port'),
     // only bind to a specific interface when HOST is set (e.g. 127.0.0.1 behind nginx)
     ...(host ? { host } : {}),
-    app: { basePath },
+    app: { basePath, trustProxy },
     // '/next/' must reach the home route mounted at '/next'
     ...(basePath ? { router: { stripTrailingSlash: true } } : {}),
     routes: {
@@ -110,6 +111,7 @@ const manifest = {
         options: {
           cookieOptions: {
             isSecure: config.get('/auth/session/secure'),
+            isHttpOnly: true,
             path: cookiePath
           },
           // static assets and health checks don't need a CSRF token
@@ -158,7 +160,6 @@ const manifest = {
       { plugin: './server/api/json' },
       { plugin: './server/web/auth/local' },
       { plugin: './server/web/browse' },
-      { plugin: './server/web/comment' },
       { plugin: './server/web/contributors' },
       { plugin: './server/web/errors' },
       { plugin: './server/web/faq' },
@@ -170,8 +171,7 @@ const manifest = {
       { plugin: './server/web/search' },
       { plugin: './server/web/sitemap/xml' },
       { plugin: './server/web/test' },
-      { plugin: './server/web/edit' },
-      { plugin: './server/web/delete' }
+      { plugin: './server/web/edit' }
     ]
   }
 };

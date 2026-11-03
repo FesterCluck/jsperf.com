@@ -14,8 +14,7 @@ const register = (server) => {
       }
 
       const context = {
-        headTitle: 'Search',
-        admin: false
+        headTitle: 'Search'
       };
 
       const q = request.query.q;

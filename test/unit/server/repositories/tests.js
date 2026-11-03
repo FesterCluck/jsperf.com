@@ -57,7 +57,7 @@ lab.experiment('Tests Repository', function () {
       await tests.bulkCreate(pageID, t);
       Code.expect(
         genericQueryStub.calledWithExactly(
-          'INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`, NULL), (1, `t2`, `n`, `a = 2`, NULL)',
+          'INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`, NULL), (`1`, `t2`, `n`, `a = 2`, NULL)',
           [
             'tests',
             ['pageID', 'title', 'defer', 'code', 'complexity']
@@ -70,7 +70,7 @@ lab.experiment('Tests Repository', function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
 
       await tests.bulkCreate(pageID, [{ title: 't1', defer: 'n', code: 'a = 1', complexity: { estimate: true, overall: 'o1', calls: [] } }]);
-      Code.expect(genericQueryStub.getCall(0).args[0]).to.equal('INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`, `{"estimate":true,"overall":"o1","calls":[]}`)');
+      Code.expect(genericQueryStub.getCall(0).args[0]).to.equal('INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`, `{"estimate":true,"overall":"o1","calls":[]}`)');
     });
 
     lab.test('returns an error when not enough rows inserted', async function () {
@@ -120,21 +120,21 @@ lab.experiment('Tests Repository', function () {
       let call1 = genericQueryStub.getCall(0).args;
       call1 = Hoek.flatten(call1).join(',');
 
-      Code.expect(call1).to.equal('INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`, NULL),tests,pageID,title,defer,code,complexity');
+      Code.expect(call1).to.equal('INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?),tests,pageID,title,defer,code,complexity,1,t1,n,a = 1,');
     });
 
     lab.test('updates and inserts the complexity estimate', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
       const estimate = { overall: 'on', calls: [] };
-      const json = '`{"overall":"on","calls":[]}`';
+      const json = '{"overall":"on","calls":[]}';
 
       await tests.bulkUpdate(pageID, [
         { testID: 5, title: 't1', defer: 'n', code: 'a = 1', complexity: estimate },
         { title: 't2', defer: 'n', code: 'a = 2', complexity: estimate }
       ], true);
 
-      Code.expect(genericQueryStub.getCall(0).args[0]).to.equal('UPDATE ?? SET title = `t1`, defer =  `n` , code =  `a = 1`, complexity = ' + json + ' WHERE pageID = 1 AND testID = 5');
-      Code.expect(genericQueryStub.getCall(1).args[0]).to.equal('INSERT INTO ?? (??) VALUES (1, `t2`, `n`, `a = 2`, ' + json + ')');
+      Code.expect(genericQueryStub.getCall(0).args).to.equal(['UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?', ['tests', 't1', 'n', 'a = 1', json, 1, 5]]);
+      Code.expect(genericQueryStub.getCall(1).args).to.equal(['INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)', ['tests', ['pageID', 'title', 'defer', 'code', 'complexity'], 1, 't2', 'n', 'a = 2', json]]);
     });
 
     lab.test('returns the result of each update', async function () {
@@ -154,10 +154,9 @@ lab.experiment('Tests Repository', function () {
       const call1 = genericQueryStub.getCall(0).args;
       const call2 = genericQueryStub.getCall(1).args;
 
-      Code.expect(call2[0]).to.equal('UPDATE ?? SET title = `t2`, defer =  `n` , code =  `a = 2`, complexity = NULL WHERE pageID = 1 AND testID = 321');
-      Code.expect(call2[1]).to.equal(['tests']);
-      Code.expect(call1[0]).to.equal('UPDATE ?? SET title = `t1`, defer =  `n` , code =  `a = 1`, complexity = NULL WHERE pageID = 1 AND testID = 123');
-      Code.expect(call1[1]).to.equal(['tests']);
+      const sql = 'UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?';
+      Code.expect(call2).to.equal([sql, ['tests', 't2', 'n', 'a = 2', null, 1, 321]]);
+      Code.expect(call1).to.equal([sql, ['tests', 't1', 'n', 'a = 1', null, 1, 123]]);
     });
 
     lab.test('inserts new test if user is not the original owner', async function () {
@@ -168,11 +167,10 @@ lab.experiment('Tests Repository', function () {
       await tests.bulkUpdate(pageID, tClone, false);
       const call1 = genericQueryStub.getCall(0).args;
       const call2 = genericQueryStub.getCall(1).args;
-      Code.expect(call2[0]).to.equal('INSERT INTO ?? (??) VALUES (1, `t2`, `n`, `a = 2`, NULL)');
-      Code.expect(call2[1]).to.equal(['tests', ['pageID', 'title', 'defer', 'code', 'complexity']]);
-
-      Code.expect(call1[0]).to.equal('INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`, NULL)');
-      Code.expect(call1[1]).to.equal(['tests', ['pageID', 'title', 'defer', 'code', 'complexity']]);
+      const sql = 'INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)';
+      const columns = ['pageID', 'title', 'defer', 'code', 'complexity'];
+      Code.expect(call2).to.equal([sql, ['tests', columns, 1, 't2', 'n', 'a = 2', null]]);
+      Code.expect(call1).to.equal([sql, ['tests', columns, 1, 't1', 'n', 'a = 1', null]]);
     });
 
     lab.test('deletes existing test if no title and no code', async function () {
@@ -189,10 +187,9 @@ lab.experiment('Tests Repository', function () {
       const call1 = genericQueryStub.getCall(0).args;
       const call2 = genericQueryStub.getCall(1).args;
 
-      Code.expect(call1[0]).to.equal('DELETE FROM ?? WHERE pageID = 1 AND testID = 123');
-      Code.expect(call1[1]).to.equal(['tests']);
-      Code.expect(call2[0]).to.equal('DELETE FROM ?? WHERE pageID = 1 AND testID = 321');
-      Code.expect(call2[1]).to.equal(['tests']);
+      const sql = 'DELETE FROM ?? WHERE pageID = ? AND testID = ?';
+      Code.expect(call1).to.equal([sql, ['tests', 1, 123]]);
+      Code.expect(call2).to.equal([sql, ['tests', 1, 321]]);
     });
 
     lab.test('keeps a test that only has a blank title', async function () {

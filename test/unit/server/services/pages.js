@@ -5,7 +5,7 @@ const sinon = require('sinon');
 
 const Pages = require('../../../../server/services/pages');
 
-const MockPagesRepo = Support.mock('repositories/pages', ['get', 'create', 'updateById', 'getPopularRecent', 'getPopularAllTime', 'find', 'updateHits', 'getBySlug', 'findBySlug', 'getVisibleBySlug', 'findVisibleBySlug', 'deleteOneRevisionBySlug', 'deleteAllRevisionsBySlug']);
+const MockPagesRepo = Support.mock('repositories/pages', ['get', 'create', 'updateById', 'getPopularRecent', 'getPopularAllTime', 'find', 'updateHits', 'getBySlug', 'findBySlug', 'getVisibleBySlug', 'findVisibleBySlug']);
 
 const MockTestsRepo = Support.mock('repositories/tests', ['bulkCreate', 'bulkUpdate', 'findByPageID', 'setComplexity']);
 
@@ -34,9 +34,7 @@ lab.experiment('Pages Service', function () {
       getBySlug: s.stub(server.plugins['repositories/pages'], 'getBySlug'),
       findBySlug: s.stub(server.plugins['repositories/pages'], 'findBySlug'),
       getVisibleBySlug: s.stub(server.plugins['repositories/pages'], 'getVisibleBySlug'),
-      findVisibleBySlug: s.stub(server.plugins['repositories/pages'], 'findVisibleBySlug'),
-      deleteOneRevisionBySlug: s.stub(server.plugins['repositories/pages'], 'deleteOneRevisionBySlug'),
-      deleteAllRevisionsBySlug: s.stub(server.plugins['repositories/pages'], 'deleteAllRevisionsBySlug')
+      findVisibleBySlug: s.stub(server.plugins['repositories/pages'], 'findVisibleBySlug')
     };
 
     testsRepoStub = {
@@ -462,22 +460,6 @@ lab.experiment('Pages Service', function () {
       const values = await pages.getVisibleBySlugWithRevisions(slug, rev);
       Code.expect(values[0].id).to.equal(1);
       Code.expect(values[1]).to.equal(mockPages);
-    });
-  });
-
-  lab.experiment('deleting', () => {
-    lab.test('revision 1 deletes all revisions', async () => {
-      pagesRepoStub.deleteAllRevisionsBySlug.returns(Promise.resolve(3));
-
-      const values = await pages.deleteBySlug('oh-yea', 1);
-      Code.expect(values).to.equal(3);
-    });
-
-    lab.test('revisions above 1 deletes just one revision', async () => {
-      pagesRepoStub.deleteOneRevisionBySlug.returns(Promise.resolve(1));
-
-      const values = await pages.deleteBySlug('oh-yea', 2);
-      Code.expect(values).to.equal(1);
     });
   });
 

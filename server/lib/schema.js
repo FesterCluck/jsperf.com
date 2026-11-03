@@ -22,7 +22,7 @@ exports.testPage = Joi.object({
   initHTML: mediumText,
   setup: mediumText,
   teardown: mediumText,
-  test: Joi.array().required().min(2).items(Joi.object({
+  test: Joi.array().required().min(2).max(defaults.maxTests).items(Joi.object({
     title: Joi.string().trim().allow('').empty('').default(defaults.deleteMe).max(255),
     code: Joi.string().trim().allow('').empty('').default(defaults.deleteMe).max(defaults.mediumTextLength),
     defer: Joi.string().default('n').valid('y', 'n'),

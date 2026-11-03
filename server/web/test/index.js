@@ -3,10 +3,12 @@
 const Boom = require('@hapi/boom');
 const hljs = require('highlight.js');
 const regex = require('../../lib/regex');
+const ownership = require('../../lib/ownership');
 const schema = require('../../lib/schema');
 const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const complexity = require('../../lib/complexity');
+const clientIp = require('../../lib/clientIp');
 
 const register = (server, options) => {
   const pagesService = server.plugins['services/pages'];
@@ -61,9 +63,7 @@ const register = (server, options) => {
             });
         }
 
-        const own = request.yar.get('own') || {};
-        const isOwn = own[page.id];
-        const isAdmin = request.yar.get('admin');
+        const isOwn = ownership.isOwner(request, page);
 
         return {
           headTitle: page.title,
@@ -72,9 +72,8 @@ const register = (server, options) => {
             slug: basePath.slug(request)
           },
           jsClass: true,
-          isAdmin,
           // Don’t let robots index non-published test cases
-          noIndex: page.visible === 'n' && (isOwn || isAdmin),
+          noIndex: page.visible === 'n' && isOwn,
           pageInit: page.initHTML.includes('function init()'),
           hasPrep,
           hasSetupOrTeardown,
@@ -140,26 +139,29 @@ const register = (server, options) => {
         return h.view('test/index', Object.assign(model, errObj, request.payload));
       }
 
-      const ip = request.headers['x-forwarded-for'] || request.info.remoteAddress;
+      const ip = clientIp(request);
       const comment = await commentsService.create(model.page.id, ip, result.value);
       model.page.comments.push(comment);
       return h.view('test/index', model);
     }
   });
 
-  // allows owner or admin to publish a test making it visible to the public
+  // allows the owner to publish a test making it visible to the public
   server.route({
-    method: 'GET',
+    method: 'POST',
     path: '/{testSlug}/{rev}/publish',
+    options: {
+      auth: {
+        mode: 'try',
+        strategy: 'session'
+      }
+    },
     handler: async (request, h) => {
       try {
         const values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
         const page = values[0];
-        const own = request.yar.get('own') || {};
-        const isOwn = own[page.id];
-        const isAdmin = request.yar.get('admin');
 
-        if (!(isOwn || isAdmin)) {
+        if (!ownership.isOwner(request, page)) {
           // whoever is requesting this doesn't own it so don't let them know it exists
           throw new Error('Not found');
         }

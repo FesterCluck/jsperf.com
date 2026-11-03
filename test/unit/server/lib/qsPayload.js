@@ -32,6 +32,12 @@ lab.experiment('qsPayload', () => {
     Code.expect(res.result).to.equal({ 'a[b]': 1 });
   });
 
+  lab.test('turns an empty POST body into an empty payload', async () => {
+    const res = await server.inject({ method: 'POST', url: '/' });
+
+    Code.expect(res.result).to.equal({});
+  });
+
   lab.test('ignores requests without a payload', async () => {
     const res = await server.inject({ method: 'POST', url: '/', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
 
