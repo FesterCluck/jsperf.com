@@ -178,6 +178,36 @@ const register = (server, options) => {
     }
   });
 
+  // The page's own code (preparation HTML, setup, teardown and the tests) is untrusted, so it runs here, in a
+  // document that browsers sandbox into an opaque origin: no cookies, storage or access to the rest of the site
+  // even when this URL is opened directly. `allow-scripts` is the only permission it gets.
+  server.route({
+    method: 'GET',
+    path: '/{testSlug}/{rev}/frame',
+    options: {
+      // the page embeds this document, so it may be framed by the same origin
+      security: { xframe: 'sameorigin' }
+    },
+    handler: async (request, h) => {
+      let values;
+      try {
+        values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
+      } catch (err) {
+        if (err.message === 'Not found') {
+          throw Boom.notFound('The page was not found');
+        }
+        throw err;
+      }
+
+      const page = values[0];
+      page.test = values[1];
+
+      return h
+        .view('test/frame', { page }, { layout: false })
+        .header('Content-Security-Policy', 'sandbox allow-scripts');
+    }
+  });
+
   server.route({
     method: 'GET',
     path: '/{testSlug}.atom',

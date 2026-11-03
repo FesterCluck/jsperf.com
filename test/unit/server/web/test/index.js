@@ -604,6 +604,115 @@ lab.experiment('create comment', () => {
   });
 });
 
+lab.experiment('sandboxed runner', () => {
+  lab.test('the page embeds the frame, escapes titles and does not inline the code', async () => {
+    const page = {
+      id: 1,
+      slug,
+      revision: 3,
+      title: 'Oh <img src=x onerror=alert(1)>',
+      info: '',
+      setup: '',
+      teardown: '',
+      initHTML: '<script>window.attackerCode = 1</script>',
+      visible: 'y',
+      author: 'Max',
+      authorEmail: 'm@b.co',
+      authorURL: 'b.co',
+      hits: 0,
+      published: now,
+      updated: now,
+      maxRev: 3
+    };
+    const tests = [{ testID: 1, title: 't <b>1</b>', code: 'a = 1', defer: 'n' }];
+    pagesServiceStub.getBySlug.returns(Promise.resolve([page, tests, [], []]));
+
+    const res = await server.inject({ method: 'GET', url: `/${slug}/3` });
+    Code.expect(res.statusCode).to.equal(200);
+    Code.expect(res.payload).to.include(`<iframe id="test-frame" class="" src="/${slug}/3/frame" sandbox="allow-scripts"`);
+    Code.expect(res.payload).to.include('<script src="/public/_js/test.js"></script>');
+    Code.expect(res.payload).to.not.include('<img src=x onerror');
+    Code.expect(res.payload).to.not.include('<b>1</b>');
+    Code.expect(res.payload).to.not.include('window.attackerCode = 1</script>');
+    Code.expect(res.payload).to.not.include('ui.add(');
+  });
+});
+
+lab.experiment('frame', () => {
+  const framePage = () => [{
+    id: 1,
+    slug,
+    revision: 1,
+    title: 'Oh </title><b>Yea</b>',
+    setup: 'var data = [1, 2];',
+    teardown: 'data = null;',
+    initHTML: '<p id="prep">prep</p><script>function init() {}</script>'
+  }, [
+    { testID: 1, title: 't1', code: 'data.length;', defer: 'n' },
+    { testID: 2, title: 't2</script><script>alert(1)', code: 'data.pop();', defer: 'y' }
+  ], [], []];
+
+  lab.beforeEach(async () => {
+    request = { method: 'GET', url: `/${slug}/1/frame` };
+  });
+
+  lab.test('is sandboxed to an opaque origin and may only be framed by this site', async () => {
+    pagesServiceStub.getBySlug.returns(Promise.resolve(framePage()));
+
+    const res = await server.inject(request);
+    Code.expect(res.statusCode).to.equal(200);
+    Code.expect(res.headers['content-security-policy']).to.equal('sandbox allow-scripts');
+    Code.expect(res.headers['x-frame-options']).to.equal('SAMEORIGIN');
+    Code.expect(pagesServiceStub.getBySlug.calledWith(slug, '1')).to.be.true();
+  });
+
+  lab.test('contains the runner, the tests, setup, teardown and the preparation HTML', async () => {
+    pagesServiceStub.getBySlug.returns(Promise.resolve(framePage()));
+
+    const res = await server.inject(request);
+    Code.expect(res.payload).to.startWith('<!doctype html>');
+    Code.expect(res.payload).to.include('<script src="/public/_js/frame.js"></script>');
+    Code.expect(res.payload).to.include("'fn': 'data.length;'");
+    Code.expect(res.payload).to.include("'defer': true");
+    Code.expect(res.payload).to.include("Benchmark.prototype.setup = 'var data = [1, 2];'");
+    Code.expect(res.payload).to.include("Benchmark.prototype.teardown = 'data = null;'");
+    Code.expect(res.payload).to.include('<p id="prep">prep</p><script>function init() {}</script>');
+    // the page's title is not markup
+    Code.expect(res.payload).to.include('<title>Oh &lt;/title&gt;&lt;b&gt;Yea&lt;/b&gt;</title>');
+  });
+
+  lab.test('a test title cannot break out of the script it is written into', async () => {
+    pagesServiceStub.getBySlug.returns(Promise.resolve(framePage()));
+
+    const res = await server.inject(request);
+    Code.expect(res.payload).to.not.include('</script><script>alert(1)');
+  });
+
+  lab.test('omits setup and teardown when there are none', async () => {
+    const values = framePage();
+    values[0].setup = '';
+    values[0].teardown = '';
+    pagesServiceStub.getBySlug.returns(Promise.resolve(values));
+
+    const res = await server.inject(request);
+    Code.expect(res.payload).to.not.include('Benchmark.prototype');
+  });
+
+  lab.test('not found', async () => {
+    pagesServiceStub.getBySlug.rejects(new Error('Not found'));
+
+    const res = await server.inject(request);
+    Code.expect(res.statusCode).to.equal(404);
+  });
+
+  lab.test('fail to get by slug', async () => {
+    pagesServiceStub.getBySlug.rejects(new Error('real helpful'));
+
+    const res = await server.inject(request);
+    Code.expect(res.statusCode).to.equal(500);
+  });
+});
+
 lab.experiment('atom', () => {
   lab.beforeEach(async () => {
     request = {

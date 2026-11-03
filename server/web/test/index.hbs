@@ -143,7 +143,7 @@
           <th scope="row" id="title-{{inc @index}}">
             <div>
               {{addCode title}}
-              {{#if pageInit}}
+              {{#if @root.pageInit}}
                 <span id="extra-{{inc @index}}"></span>
               {{/if}}
             </div>
@@ -191,6 +191,9 @@
   {{#if hasComplexity}}
     <p class="complexity-legend">Big-O rows are <strong>estimates</strong> derived statically from the source code of each test (nothing is run), and the graphs are illustrative. &ldquo;Unknown&rdquo; means the analysis could not decide.</p>
   {{/if}}
+
+  {{!-- the preparation code and the tests run in here, in a sandbox without access to this site (see the frame route) --}}
+  <iframe id="test-frame" class="{{#unless page.initHTML}}empty{{/unless}}" src="{{@root.base}}/{{page.slug}}/{{page.revision}}/frame" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Where the tests run"></iframe>
 
   {{#compare page.maxRev 2}}
     <p>You can <a href="{{@root.base}}/{{page.slug}}{{#compare 1 page.revision}}/{{page.revision}}{{/compare}}/edit" rel="nofollow">edit these tests or add even more tests to this page</a> by appending <code>/edit</code> to the URL.</p>

@@ -17,4 +17,9 @@ lab.experiment('Template Helper error', function () {
     Code.expect(safe).to.be.object();
     Code.expect(safe.string).to.equal('<p class="error">msg</p>');
   });
+
+  lab.test('escapes the message', async function () {
+    const safe = error('<img src=x onerror=alert(1)>', { hash: {} });
+    Code.expect(safe.string).to.equal('<span class="error">&lt;img src&#x3D;x onerror&#x3D;alert(1)&gt;</span>');
+  });
 });

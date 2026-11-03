@@ -35,13 +35,14 @@ const replacements = [
   ['\'platform\': context.platform', '\'platform\': platform']
 ];
 
-// Builds public/_js/test.js: lodash + platform + benchmark + client/ui.js
-async function js () {
+// Builds public/_js/frame.js, which runs inside the sandboxed test frame: lodash + platform + benchmark +
+// client/runner.js
+async function frameJs () {
   const files = [
     require.resolve('lodash'),
     require.resolve('platform'),
     require.resolve('benchmark'),
-    path.join(root, 'client', 'ui.js')
+    path.join(root, 'client', 'runner.js')
   ];
   const parts = await Promise.all(files.map((f) => fs.readFile(f, 'utf8')));
   // gulp-concat joined with a newline
@@ -56,8 +57,17 @@ async function js () {
 
   const out = path.join(root, 'public', '_js');
   await fs.mkdir(out, { recursive: true });
-  await fs.writeFile(path.join(out, 'test.js'), code);
+  await fs.writeFile(path.join(out, 'frame.js'), code);
 }
+
+// Builds public/_js/test.js, the test page's side: client/ui.js on its own, it never runs user code
+async function pageJs () {
+  const out = path.join(root, 'public', '_js');
+  await fs.mkdir(out, { recursive: true });
+  await fs.copyFile(path.join(root, 'client', 'ui.js'), path.join(out, 'test.js'));
+}
+
+const js = parallel(frameJs, pageJs);
 
 function css () {
   return src('public/_css/main.src.css')
