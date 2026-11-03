@@ -1,6 +1,7 @@
 'use strict';
 
-// Complexity of JavaScript built-ins, per engine profile.
+// Complexity of JavaScript built-ins, per engine profile, derived from the lookup in builtinTable.js (which also holds
+// where each class comes from).
 //
 //  - `spec`: what the ECMAScript algorithms imply (their loops over `length`, copies of their receiver, ...). The
 //    standard states no complexities itself, except that Map / Set / WeakMap must be sublinear on average.
@@ -10,108 +11,168 @@
 //    constant time shift thanks to trimming the front of the backing store, hash tables with constant time
 //    Map / Set operations and trimming that only scans the whitespace at the ends.
 //
-// Costs are classes of the receiver's size (see complexity.js); this file only holds the tables.
+// Costs are classes of the receiver's size (see complexity.js); this file turns the table into the sets it looks at.
 
-const set = (...lists) => new Set(lists.flat());
+const table = require('./builtinTable');
 
-// instance methods that take constant time (formatting and accessors are bounded by the format, not by a collection)
-const O1 = ['push', 'pop', 'charAt', 'charCodeAt', 'codePointAt', 'at', 'getTime', 'toFixed', 'valueOf', 'hasOwnProperty',
-  'log', 'warn', 'error', 'info', 'debug', 'toString', 'bind', 'now', 'next',
-  'toLocaleString', 'toLocaleDateString', 'toLocaleTimeString', 'toISOString', 'toJSON', 'toUTCString', 'toGMTString', 'toDateString',
-  'toTimeString', 'toPrecision', 'toExponential', 'format', 'formatToParts', 'formatRange', 'resolvedOptions', 'supportedLocalesOf',
-  'getFullYear', 'getMonth', 'getDate', 'getDay', 'getHours', 'getMinutes', 'getSeconds', 'getMilliseconds', 'getTimezoneOffset',
-  'getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCDay', 'getUTCHours', 'getUTCMinutes', 'getUTCSeconds', 'getUTCMilliseconds',
-  'setFullYear', 'setMonth', 'setDate', 'setHours', 'setMinutes', 'setSeconds', 'setMilliseconds', 'setTime',
-  'setUTCFullYear', 'setUTCMonth', 'setUTCDate', 'setUTCHours', 'setUTCMinutes', 'setUTCSeconds', 'setUTCMilliseconds',
-  'subarray', 'isWellFormed', 'deref', 'isPrototypeOf', 'propertyIsEnumerable', 'resolve', 'reject',
-  // iterators are created lazily: walking them is costed by the loop that consumes them
-  'keys', 'values', 'entries', 'take', 'drop'];
+const TYPED_ARRAYS = table.TA;
 
-// keyed collection operations: the standard only promises "sublinear on average", engines use hash tables
-const COLLECTION_OPS = ['get', 'set', 'has', 'add', 'delete'];
+// callable without `new`, and constant time
+const CALLABLE_CONSTRUCTORS = ['String', 'Number', 'Boolean', 'Symbol', 'BigInt'];
 
-// instance methods that touch every element of their receiver
-const N = ['indexOf', 'lastIndexOf', 'includes', 'slice', 'substring', 'substr', 'concat', 'join', 'split', 'reverse', 'fill',
-  'splice', 'shift', 'unshift', 'copyWithin', 'flat', 'trim', 'replace', 'replaceAll', 'match', 'matchAll', 'search', 'test',
-  'exec', 'startsWith', 'endsWith', 'toUpperCase', 'toLowerCase', 'localeCompare', 'normalize', 'toReversed', 'with', 'clear',
-  'trimStart', 'trimEnd', 'toSpliced', 'toWellFormed', 'toArray',
-  'union', 'intersection', 'difference', 'symmetricDifference', 'isSubsetOf', 'isSupersetOf', 'isDisjointFrom'];
+// objects that are only a bag of functions: every call on them is constant time unless the table lists it as dearer
+// (`Math.sumPrecise` walks an iterable)
+const NAMESPACES = ['Math', 'Number', 'Date', 'console', 'performance', 'Symbol', 'BigInt', 'Intl'];
 
-// methods whose cost is set by their count / length argument instead (see Analyzer.argSized)
-const ARG_SIZED = ['repeat', 'padStart', 'padEnd'];
+const set = (items) => new Set(items);
 
-// methods that copy their receiver into a new array / string (memory)
-const ALLOC = ['slice', 'substring', 'substr', 'concat', 'join', 'split', 'flat', 'trim', 'replace', 'replaceAll', 'match',
-  'matchAll', 'toUpperCase', 'toLowerCase', 'normalize', 'toReversed', 'with', 'splice', 'copyWithin', 'trimStart', 'trimEnd',
-  'toSpliced', 'toWellFormed', 'toArray', 'union', 'intersection', 'difference', 'symmetricDifference'];
+const RANK = { 1: 0, log: 1, arg: 2, n: 3, subtree: 3, markup: 3, sized: 3, nlogn: 4, unknown: 9 };
+const base = (time) => time.replace(/\*cb$/, '');
+const rank = (time) => RANK[base(time)];
 
-const TYPED_ARRAYS = ['Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array',
-  'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array'];
+// instance methods are looked up by name alone, so one name has to stand for every owner that defines it: a row marked
+// `primary` wins (`set` is the Map method, not TypedArray's), otherwise the most expensive owner does
+const methodRows = (engine) => {
+  const byName = new Map();
+  for (const row of table.rows) {
+    if (row.kind === 'method' && !row.accessor) {
+      byName.set(row.name, (byName.get(row.name) || []).concat(row));
+    }
+  }
 
-const common = {
-  TYPED_ARRAYS: set(TYPED_ARRAYS),
-  ONCE_CALLBACK_METHODS: set(['then', 'catch', 'finally']), // promise methods: the callback runs once
-  // methods that run a callback once per element
-  CALLBACK_METHODS: set(['forEach', 'map', 'filter', 'reduce', 'reduceRight', 'some', 'every', 'find', 'findIndex', 'findLast',
-    'findLastIndex', 'flatMap']),
-  ALLOC_CALLBACK_METHODS: set(['map', 'filter', 'flatMap']),
-  SORT_METHODS: set(['sort', 'toSorted']), // comparison sorts: n log n time, a scratch copy of the elements
-  ARG_SIZED: set(ARG_SIZED),
-  // namespaces whose methods are all constant time
-  O1_NAMESPACES: set(['Math', 'Number', 'Date', 'console', 'performance', 'Symbol', 'Reflect', 'Boolean', 'BigInt', 'Intl', 'Atomics']),
-  O1_GLOBAL_FUNCTIONS: set(['parseInt', 'parseFloat', 'isNaN', 'isFinite', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt',
-    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame']),
-  N_GLOBAL_FUNCTIONS: set(['encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI', 'escape', 'unescape', 'structuredClone']),
-  // static helpers by namespace: null = every method of it
-  N_STATICS: new Map([
-    ['JSON', null],
-    ['Object', set(['keys', 'values', 'entries', 'assign', 'fromEntries', 'freeze', 'getOwnPropertyNames', 'groupBy'])],
-    ['Promise', set(['all', 'allSettled', 'race', 'any'])],
-    ['Map', set(['groupBy'])]
-  ]),
-  O1_STATICS: new Map([
-    ['Object', set(['create', 'getPrototypeOf', 'setPrototypeOf', 'defineProperty', 'is', 'hasOwn', 'getOwnPropertyDescriptor', 'seal',
-      'isFrozen', 'isSealed', 'preventExtensions', 'isExtensible'])],
-    ['Promise', set(['resolve', 'reject', 'withResolvers'])],
-    ['Array', set(['isArray', 'of'])],
-    ...TYPED_ARRAYS.map((name) => [name, set(['of'])]),
-    ['String', set(['fromCharCode', 'fromCodePoint', 'raw'])]
-  ]),
-  // constructors: arg => size dependent allocation
-  SIZED_CONSTRUCTORS: set(['Array', 'Set', 'Map', 'WeakSet', 'WeakMap', 'ArrayBuffer', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray',
-    'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array']),
-  O1_CONSTRUCTORS: set(['Date', 'Object', 'Error', 'TypeError', 'RangeError', 'RegExp', 'String', 'Number', 'Boolean', 'Event', 'CustomEvent', 'EventTarget']),
-  ALLOC_METHODS: set(ALLOC),
-  // DOM (not part of ECMAScript): read from Chrome's implementation, and used for every browser since the table has no other source
-  DOM_O1_METHODS: set(['createElement', 'createTextNode', 'createComment', 'createDocumentFragment', 'getElementById']),
-  // inserting or removing a node visits its whole subtree: constant for a lone node, linear for a fragment or a populated element
-  DOM_SUBTREE_METHODS: set(['appendChild', 'insertBefore', 'removeChild', 'replaceChild']),
-  DOM_MARKUP_METHODS: set(['insertAdjacentHTML']), // parsed and inserted: linear in the markup
-  // string methods that are constant time when the receiver is a plain stored string (no extra memory either)
-  STRING_O1_METHODS: new Set()
+  const chosen = new Map();
+  for (const [name, rows] of byName) {
+    const primary = rows.find((r) => r.primary);
+    chosen.set(name, primary || rows.reduce((best, r) => (rank(r[engine].time) > rank(best[engine].time) ? r : best)));
+  }
+
+  return chosen;
 };
 
-const spec = Object.assign({}, common, {
-  engine: 'spec',
-  O1_METHODS: set(O1),
-  LOG_METHODS: set(COLLECTION_OPS),
-  N_METHODS: set(N),
-  ropes: false
-});
+const build = (engine) => {
+  const sets = {
+    O1_METHODS: new Set(),
+    LOG_METHODS: new Set(),
+    N_METHODS: new Set(),
+    CALLBACK_METHODS: new Set(),
+    ONCE_CALLBACK_METHODS: new Set(),
+    SORT_METHODS: new Set(),
+    ARG_SIZED: new Set(),
+    ALLOC_METHODS: new Set(),
+    ALLOC_CALLBACK_METHODS: new Set(),
+    STRING_O1_METHODS: new Set()
+  };
 
-const v8 = Object.assign({}, common, {
-  engine: 'v8',
-  // Array.prototype.shift never moves more than a small constant number of elements (bigger arrays just move their start),
-  // and trimming only looks at the whitespace around the text
-  O1_METHODS: set(O1, COLLECTION_OPS, ['shift', 'trim', 'trimStart', 'trimEnd']),
-  ALLOC_METHODS: set(ALLOC.filter((name) => !['trim', 'trimStart', 'trimEnd'].includes(name))), // the result shares the characters
-  LOG_METHODS: new Set(),
-  N_METHODS: set(N.filter((name) => !['shift', 'trim', 'trimStart', 'trimEnd'].includes(name))),
-  // substrings of long stored strings share the parent's characters
-  STRING_O1_METHODS: set(['slice', 'substring', 'substr']),
-  ropes: true // concatenation, repeat and padding build ropes: logarithmic until the string is read
-});
+  let ropes = false;
+  for (const [name, row] of methodRows(engine)) {
+    const { time, space } = row[engine];
+    const spec = row.spec.time;
+    if (spec === 'arg') {
+      sets.ARG_SIZED.add(name);
+      ropes = ropes || time === 'log';
+      continue;
+    }
+    if (time === 'unknown') {
+      continue;
+    }
+
+    const kind = base(time);
+    const callback = time.endsWith('*cb');
+    if (kind === '1') {
+      sets.O1_METHODS.add(name);
+    } else if (kind === 'log') {
+      sets.LOG_METHODS.add(name);
+    } else if (kind === 'nlogn') {
+      sets.SORT_METHODS.add(name);
+    } else if (kind === 'n' && callback) {
+      sets.CALLBACK_METHODS.add(name);
+    } else if (kind === 'n') {
+      sets.N_METHODS.add(name);
+    }
+    if (time === 'cb') {
+      sets.ONCE_CALLBACK_METHODS.add(name);
+    }
+    if (space === 'n' && kind !== 'nlogn') {
+      (callback ? sets.ALLOC_CALLBACK_METHODS : sets.ALLOC_METHODS).add(name);
+    }
+  }
+
+  // a result that shares its parent's characters when the receiver is a stored string: the call is linear otherwise
+  for (const row of table.rows) {
+    if (row.kind === 'method' && !row.accessor && row[engine].shared) {
+      sets.STRING_O1_METHODS.add(row.name);
+      sets.N_METHODS.add(row.name);
+      sets.ALLOC_METHODS.add(row.name);
+      sets.O1_METHODS.delete(row.name);
+    }
+  }
+
+  return Object.assign(sets, { ropes });
+};
+
+// functions called on a namespace (`Math.max`, `Object.keys`, `JSON.parse`)
+const statics = (engine) => {
+  const o1Namespaces = new Set();
+  const n = new Map();
+  const o1 = new Map();
+  const owners = new Map();
+  for (const row of table.rows) {
+    if (row.kind === 'static' && !row.name.startsWith('@@')) {
+      owners.set(row.owner, (owners.get(row.owner) || []).concat(row));
+    }
+  }
+
+  const add = (map, owner, name) => map.set(owner, (map.get(owner) || new Set()).add(name));
+  const targets = (owner) => (owner === '%TypedArray%' ? TYPED_ARRAYS : [owner]);
+  for (const [owner, rows] of owners) {
+    const namespace = NAMESPACES.includes(owner) || rows.every((r) => r[engine].time === '1');
+    for (const row of rows) {
+      const { time } = row[engine];
+      if (time === 'unknown' || row.name === 'from') { // `from` is costed by its callback, see staticCall
+        continue;
+      }
+      for (const target of targets(owner)) {
+        if (time !== '1') {
+          add(n, target, row.name);
+        } else if (!namespace) {
+          add(o1, target, row.name);
+        }
+      }
+    }
+    if (namespace) {
+      targets(owner).forEach((t) => o1Namespaces.add(t));
+    }
+  }
+
+  return { o1Namespaces, n, o1 };
+};
+
+const common = (engine) => {
+  const s = statics(engine);
+  const ctors = table.rows.filter((r) => r.kind === 'ctor');
+  const globals = table.rows.filter((r) => r.kind === 'global' && r[engine].time === '1').map((r) => r.name);
+  const dom = (time) => set(table.rows.filter((r) => r.kind === 'dom' && r[engine].time === time).map((r) => r.name));
+  return {
+    TYPED_ARRAYS: set(TYPED_ARRAYS),
+    O1_NAMESPACES: s.o1Namespaces,
+    O1_GLOBAL_FUNCTIONS: set(globals.concat(CALLABLE_CONSTRUCTORS)),
+    N_GLOBAL_FUNCTIONS: set(table.rows.filter((r) => r.kind === 'global' && base(r[engine].time) === 'n').map((r) => r.name)),
+    N_STATICS: s.n,
+    O1_STATICS: s.o1,
+    SIZED_CONSTRUCTORS: set(ctors.filter((r) => r[engine].time === 'sized').map((r) => r.name)),
+    O1_CONSTRUCTORS: set(ctors.filter((r) => r[engine].time === '1').map((r) => r.name)),
+    DOM_O1_METHODS: dom('1'),
+    DOM_SUBTREE_METHODS: dom('subtree'),
+    DOM_MARKUP_METHODS: dom('markup')
+  };
+};
+
+const make = (engine) => Object.assign({ engine }, common(engine), build(engine));
+
+const spec = make('spec');
+const v8 = make('v8');
 
 exports.spec = spec;
 exports.v8 = v8;
 exports.profile = (engine) => (engine === 'v8' ? v8 : spec);
+exports.table = table;

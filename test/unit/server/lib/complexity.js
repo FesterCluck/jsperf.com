@@ -27,10 +27,10 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(result.estimate).to.be.true();
       Code.expect(result.overall).to.equal('on');
       Code.expect(result.calls).to.equal([
-        { code: 'buildLookupTable(sharedData)', cls: 'on' },
-        { code: 'checksum(sharedData)', cls: 'on' },
+        { code: 'buildLookupTable(sharedData)', cls: 'on', steps: [{ name: 'Object.create', cls: 'o1' }, { name: 'for loop', cls: 'on' }] },
+        { code: 'checksum(sharedData)', cls: 'on', steps: [{ name: 'for loop', cls: 'on' }] },
         { code: 'constantLookup(lookup, targetKeys[k])', cls: 'o1' },
-        { code: 'binarySearch(sortedData, targetKeys[k])', cls: 'ologn' }
+        { code: 'binarySearch(sortedData, targetKeys[k])', cls: 'ologn', steps: [{ name: 'while loop', cls: 'ologn' }] }
       ]);
     });
 
@@ -507,7 +507,7 @@ lab.experiment('complexity analyzer', () => {
 
     lab.test('recursion on a number keeps its shape', () => {
       Code.expect(overall('fact(10);', { setup })).to.equal('on');
-      Code.expect(overall('fib(30);', { setup: 'function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }' })).to.equal('higher');
+      Code.expect(overall('fib(30);', { setup: 'function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }' })).to.equal('oexp');
     });
   });
 
@@ -522,7 +522,7 @@ lab.experiment('complexity analyzer', () => {
     });
 
     lab.test('branching recursion that does not shrink geometrically is exponential', () => {
-      Code.expect(overall('function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); } fib(20)')).to.equal('higher');
+      Code.expect(overall('function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); } fib(20)')).to.equal('oexp');
     });
 
     lab.test('halving recursion', () => {
@@ -670,8 +670,11 @@ lab.experiment('complexity analyzer', () => {
 
   lab.experiment('classify', () => {
     lab.test('rounds up to the next displayable class', () => {
-      Code.expect(classify({ n: 0, l: 2 })).to.equal('on');
-      Code.expect(classify({ n: 1, l: 2 })).to.equal('on2');
+      Code.expect(classify({ n: 0, l: 2 })).to.equal('ologn2');
+      Code.expect(classify({ n: 0, l: 3 })).to.equal('ologn2');
+      Code.expect(classify({ n: 1, l: 2 })).to.equal('onlogn2');
+      Code.expect(classify({ n: 99, l: 0 })).to.equal('oexp');
+      Code.expect(classify({ n: 4, l: 0 })).to.equal('higher');
       Code.expect(classify({ n: 2, l: 1 })).to.equal('on3');
       Code.expect(classify({ n: 3, l: 0 })).to.equal('on3');
       Code.expect(classify({ n: 3, l: 1 })).to.equal('higher');
@@ -774,9 +777,9 @@ lab.experiment('complexity analyzer', () => {
     });
 
     lab.test('regular expressions with nested quantifiers can backtrack exponentially', () => {
-      Code.expect(both('/^(a+)+$/.test(text);')).to.equal('higher/o1 higher/o1');
-      Code.expect(both('text.match(/(\\w*\\s)*end/);')).to.equal('higher/on higher/on');
-      Code.expect(both('/(a+){2,}b/.exec(text);')).to.equal('higher/o1 higher/o1');
+      Code.expect(both('/^(a+)+$/.test(text);')).to.equal('oexp/o1 oexp/o1');
+      Code.expect(both('text.match(/(\\w*\\s)*end/);')).to.equal('oexp/on oexp/on');
+      Code.expect(both('/(a+){2,}b/.exec(text);')).to.equal('oexp/o1 oexp/o1');
       Code.expect(both('text.replace(pattern, "b"); text.split(); lit.match(mystery);')).to.equal('on/on on/on');
       Code.expect(both('/^(ab)+$/.test(text); /a+b*/.test(text); text.replace("a", "b");')).to.equal('on/on on/on');
     });
@@ -1096,6 +1099,157 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(present({ overall: 'on', calls: [] }, 'v8').overall.cls).to.equal('on');
       Code.expect(present(null, 'v8')).to.be.null();
       Code.expect(present({ overall: 'o1', calls: [], space: { overall: 'on', items: [] } }).space.items).to.equal([]);
+    });
+  });
+
+  lab.experiment('what a call is made of', () => {
+    const stepsOf = (code, page = none, options) => analyzeTest(page, code, options).calls.map((c) => (c.steps || []).map((s) => `${s.name}:${s.cls}`));
+    const spaceStepsOf = (code, page = none, options) => analyzeTest(page, code, options).space.items.map((c) => (c.steps || []).map((s) => `${s.name}:${s.cls}`));
+
+    lab.test('splits a built-in into the steps of its algorithm', () => {
+      Code.expect(stepsOf('data.sort(function (a, b) { return a - b; });')).to.equal([['copy elements to a work list:on', 'merge sort the runs:onlogn', 'write the order back:on']]);
+      Code.expect(stepsOf('data.map(function (x) { return x * 2; });')).to.equal([['visit elements:on', 'callback per element:on', 'store results:on']]);
+      Code.expect(stepsOf('data.map(function (x) { return other.indexOf(x); });')[0][1]).to.equal('callback per element:on2');
+      Code.expect(stepsOf('JSON.stringify(data);')).to.equal([['walk the value graph:on', 'build the text:on']]);
+      Code.expect(stepsOf('Object.keys(data);')).to.equal([['collect own keys:on', 'copy into result array:on']]);
+      Code.expect(stepsOf('Array.from(data, function (x) { return x; });')).to.equal([['iterate the source:on', 'callback per element:on', 'store:on']]);
+      Code.expect(stepsOf('Int8Array.from(data, function (x) { return x; });')).to.equal([['iterate the source:on', 'callback per element:on', 'store:on']]);
+    });
+
+    lab.test('measures the steps in the sizes of this call', () => {
+      Code.expect(stepsOf('[3, 1, 2].sort();')).to.equal([['copy elements to a work list:o1', 'merge sort the runs:o1', 'write the order back:o1']]);
+      Code.expect(stepsOf('encodeURIComponent(data);')).to.equal([['scan characters:on', 'build result:on']]);
+      Code.expect(stepsOf('encodeURIComponent();')).to.equal([['scan characters:o1', 'build result:o1']]);
+    });
+
+    lab.test('shows what V8 does differently', () => {
+      const pad = 'text.padStart(width);';
+      Code.expect(stepsOf(pad)).to.equal([['build the fill:on', 'join with the string:on']]);
+      Code.expect(stepsOf(pad, none, { engine: 'v8' })).to.equal([['build the fill by doubling:ologn', 'join into a rope:ologn']]);
+      Code.expect(stepsOf('arr.shift();', none, { engine: 'v8' })).to.equal([[]]);
+      Code.expect(stepsOf('var m = new Map(); m.clear();', none, { engine: 'v8' })).to.equal([[], []]);
+      Code.expect(analyzeTest(none, 'data.sort();').engines.v8.calls[0].steps.length).to.equal(3);
+    });
+
+    lab.test('picks the owner of an ambiguous method from what the receiver was made from', () => {
+      Code.expect(stepsOf('"a-b".split("-");')).to.equal([['scan for the pattern:o1', 'build result:o1']]);
+      Code.expect(stepsOf('/a+/.exec(text);')).to.equal([['match from lastIndex:on', 'build the match array:o1']]);
+      Code.expect(stepsOf('var re = /a+/; re.test(text);')[0]).to.equal(['match from lastIndex:on', 'build the match array:o1']);
+      Code.expect(stepsOf('var typed = new Float64Array(8); typed.set(data);')[1]).to.equal(['read the source:on', 'write at the offset:on']);
+      Code.expect(stepsOf('var set = new Set(); set.union(other);')[1]).to.equal(['visit the values:on', 'probe the other set:on', 'store the result:on']);
+      Code.expect(stepsOf('(7).toFixed(2); `x`.padStart(3);')).to.equal([[], ['build the fill:o1', 'join with the string:o1']]);
+    });
+
+    lab.test('splits a function the page defined into its loops and calls', () => {
+      const page = {
+        setup: 'function work(a) { var s = 0; for (var i = 0; i < a.length; i++) { s += a[i]; } a.sort(); return s; }\n' +
+          'function twice(a) { return work(a) + work(a); }\nvar tools = { run: function (a) { a.slice(0); a.reverse(); } };\nvar quick = (a) => a.indexOf(1);'
+      };
+      Code.expect(stepsOf('work(data);', page)).to.equal([['for loop:on', 'a.sort:onlogn']]);
+      Code.expect(stepsOf('twice(data);', page)).to.equal([['work:onlogn', 'work:onlogn']]);
+      Code.expect(stepsOf('tools.run(data);', page)).to.equal([['a.slice:on', 'a.reverse:on']]);
+      Code.expect(stepsOf('quick(data);', page)).to.equal([['a.indexOf:on']]);
+      Code.expect(stepsOf('(function (a) { a.sort(); })(data);')).to.equal([['a.sort:onlogn']]);
+    });
+
+    lab.test('names loops and calls the way they are written', () => {
+      const page = {
+        setup: 'function loops(a, k) { for (var i in a) { k(); } for (var x of a) { k(); } while (a.length) { a.pop(); } do { a.pop(); } while (a.length); }\n' +
+          'function calls(a, k) { new Map(a); new a.Thing(); a[0](); k()(); (a || b).run(); [1, 2].map(k); Math.max(1, 2); }\n' +
+          'function many(a) { a.sort(); a.sort(); a.sort(); a.sort(); a.sort(); a.sort(); a.sort(); a.sort(); a.sort(); a.sort(); }'
+      };
+      const names = (code) => analyzeTest(page, code).calls[0].steps.map((s) => s.name);
+      Code.expect(names('loops(data, f);')).to.equal(['for…in loop', 'for…of loop', 'while loop', 'do…while loop']);
+      Code.expect(names('calls(data, f);')).to.equal(['new Map', 'new …', 'call', 'call', '.run', '.map', 'Math.max']);
+      Code.expect(names('many(data);')).to.equal(Array(8).fill('a.sort'));
+      Code.expect(analyzeTest(page, 'many(data);').calls[0].moreSteps).to.equal(2);
+    });
+
+    lab.test('leaves single operations alone', () => {
+      Code.expect(stepsOf('Math.max(1, 2);')).to.equal([[]]);
+      Code.expect(stepsOf('data.push(1);')).to.equal([[]]);
+      Code.expect(stepsOf('unknownFunction(data);')).to.equal([[]]);
+      Code.expect(stepsOf('obj.size();')).to.equal([[]]);
+      Code.expect(stepsOf('Math.max.apply(null, data); fn.call(data);')).to.equal([[], []]);
+      Code.expect(stepsOf('var holder; holder.push(1);')).to.equal([[]]);
+      Code.expect(stepsOf('helper.bind(null);', { setup: 'function helper() {}' })).to.equal([[]]);
+      Code.expect(stepsOf('data[0]();')).to.equal([[]]);
+      Code.expect(stepsOf('new Thing(data);')).to.equal([[]]);
+      Code.expect(stepsOf('new data.Thing();')).to.equal([[]]);
+    });
+
+    lab.test('gives steps whose cost is unknown the unknown class', () => {
+      Code.expect(stepsOf('eval(code);')).to.equal([['parse source:on', 'run it:unknown']]);
+      Code.expect(stepsOf('data.map(callback);')[0][1]).to.equal('callback per element:unknown');
+      Code.expect(stepsOf('data.sort(callback);')[0][1]).to.equal('merge sort the runs:unknown');
+    });
+
+    lab.test('shows steps for the DOM', () => {
+      Code.expect(stepsOf('parent.appendChild(frag);')).to.equal([['visit the subtree being moved:on', 'link it in:o1']]);
+      Code.expect(stepsOf('parent.appendChild(document.createElement("a"));')).to.equal([['visit the subtree being moved:o1', 'link it in:o1']]);
+      Code.expect(stepsOf('parent.insertAdjacentHTML("beforeend", html);')).to.equal([['parse the markup:on', 'insert the nodes:on']]);
+      Code.expect(stepsOf('parent.insertAdjacentHTML("beforeend");')).to.equal([['parse the markup:o1', 'insert the nodes:o1']]);
+    });
+
+    lab.test('splits memory the same way', () => {
+      Code.expect(spaceStepsOf('data.sort(function (a, b) { return a - b; });')).to.equal([['copy elements to a work list:on', 'merge sort the runs:on', 'write the order back:o1']]);
+      Code.expect(spaceStepsOf('data.map(function (x) { return x; });')).to.equal([['visit elements:o1', 'callback per element:o1', 'store results:on']]);
+      const page = { setup: 'function build(a) { var out = []; for (var i = 0; i < a.length; i++) { out.push(a[i]); } return out.slice(0); }' };
+      Code.expect(spaceStepsOf('build(data);', page)).to.equal([['for loop:on', 'out.slice:on']]);
+    });
+
+    lab.test('is carried to the page by present(), capped and cleaned', () => {
+      const shown = present(analyzeTest(none, 'data.sort();'));
+      Code.expect(shown.calls[0].steps.map((s) => [s.step, s.cls, s.label])).to.equal([
+        ['copy elements to a work list', 'on', 'O(n)'], ['merge sort the runs', 'onlogn', 'O(n log n)'], ['write the order back', 'on', 'O(n)']
+      ]);
+      Code.expect(shown.calls[0].moreSteps).to.equal(0);
+      Code.expect(shown.calls[0].end).to.be.true();
+      Code.expect(shown.rows).to.equal(1);
+      Code.expect(shown.space.rows).to.equal(shown.space.items.length);
+
+      const messy = present({
+        overall: 'on',
+        calls: [{ code: 'a()', cls: 'on', steps: [{ name: 'x'.repeat(80), cls: 'bogus' }].concat(Array(20).fill({ name: 'y', cls: 'o1' })), moreSteps: '3' }, { code: 'b()', cls: 'o1', steps: 'nope' }],
+        more: 2
+      });
+      Code.expect(messy.calls[0].steps.length).to.equal(8);
+      Code.expect(messy.calls[0].steps[0].step.length).to.equal(40);
+      Code.expect(messy.calls[0].steps[0].cls).to.equal('unknown');
+      Code.expect(messy.calls[0].moreSteps).to.equal(3);
+      Code.expect(messy.calls[1].steps).to.not.exist();
+      Code.expect(messy.rows).to.equal(3);
+      Code.expect(messy.calls.map((c) => c.end)).to.equal([false, false]);
+    });
+
+    lab.test('cannot break the answer when the budget runs out', () => {
+      const page = { setup: 'function work(a) { for (var i = 0; i < a.length; i++) { a.sort(); } a.map(work); }' };
+      Code.expect(analyzeTest(page, 'work(data);', { maxSteps: 60 }).overall).to.be.a.string();
+    });
+  });
+
+  lab.experiment('chart classes', () => {
+    lab.test('every class the algebra can produce has a curve, a label and a name', () => {
+      const seen = new Set();
+      for (let n = 0; n <= 5; n++) {
+        for (let l = 0; l <= 3; l++) {
+          seen.add(classify({ n, l }));
+        }
+      }
+
+      seen.add(classify({ n: 99, l: 0 }));
+      seen.add(classify(null));
+      Code.expect([...seen].sort()).to.equal(Object.keys(complexity.CLASSES).sort());
+      for (const info of Object.values(complexity.CLASSES)) {
+        Code.expect(info.curve).to.match(/^curve-[a-z0-9]+$/);
+        Code.expect(info.label).to.be.a.string();
+        Code.expect(info.name).to.be.a.string();
+      }
+    });
+
+    lab.test('keeps exponential results apart from polynomial ones', () => {
+      Code.expect(overall('function g(n) { if (n < 1) return; g(n - 1); g(n - 1); } g(10);')).to.equal('oexp');
+      Code.expect(overall('for (var i = 0; i < n; i++) { for (var j = 0; j < n; j++) { for (var k = 0; k < n; k++) { for (var l = 0; l < n; l++) { y++; } } } }')).to.equal('higher');
     });
   });
 });

@@ -1,0 +1,13 @@
+{{#if steps}}
+  <span class="bigo-then" aria-hidden="true">=</span>
+  <span class="bigo-steps" role="list" aria-label="What {{code}} is made of">
+    {{#each steps}}
+      <span class="bigo-step" role="listitem" title="{{step}}: {{label}}">
+        <span class="bigo-graph bigo-mini{{#if ../space}} space-graph{{/if}} bigo-{{cls}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
+        <span class="bigo-step-name">{{step}}</span>
+        <span class="bigo-sr">{{label}}</span>
+      </span>
+    {{/each}}
+    {{#if moreSteps}}<span class="bigo-step bigo-more" role="listitem">+{{moreSteps}} more</span>{{/if}}
+  </span>
+{{/if}}

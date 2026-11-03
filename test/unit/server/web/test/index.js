@@ -165,22 +165,63 @@ lab.experiment('web/test plugin', function () {
       // result rows are still addressable by id and come first in each pair
       Code.expect($('#title-1').length).to.equal(1);
       Code.expect($('#results-2').text()).to.equal('pending…');
+      // every call of a test has a row of its own, then a row for the calls that were left out
       const rows = $('#test-table tbody tr');
-      Code.expect(rows.length).to.equal(4);
+      Code.expect(rows.length).to.equal(7);
       Code.expect(rows.eq(0).find('#results-1').length).to.equal(1);
       Code.expect(rows.eq(1).hasClass('complexity-row')).to.be.true();
-      Code.expect(rows.eq(3).hasClass('complexity-row')).to.be.true();
+      Code.expect(rows.eq(5).find('#results-2').length).to.equal(1);
+      Code.expect(rows.eq(6).hasClass('complexity-row')).to.be.true();
 
-      const first = rows.eq(1);
-      Code.expect(first.find('th .call-list code').map((i, el) => $(el).text()).get()).to.equal(['build(shared)', 'find(x)', 'weird(x)']);
-      Code.expect(first.find('th li').last().text()).to.include('+3 more');
-      Code.expect(first.find('td.complexity-breakdown .bigo-graph').map((i, el) => $(el).attr('class')).get()).to.equal(['bigo-graph bigo-on', 'bigo-graph bigo-ologn', 'bigo-graph bigo-unknown']);
-      Code.expect(first.find('td.complexity-breakdown use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-ologn', '#curve-unknown']);
-      Code.expect(first.find('td.complexity-total .bigo-graph').hasClass('bigo-on')).to.be.true();
-      Code.expect(first.hasClass('complexity-unknown')).to.be.false();
+      const group = rows.slice(1, 5);
+      Code.expect(group.find('th').map((i, el) => $(el).text().trim()).get()).to.equal(['build(shared)', 'find(x)', 'weird(x)', '+3 more']);
+      Code.expect(group.find('td.complexity-breakdown .bigo-graph').map((i, el) => $(el).attr('class')).get()).to.equal(['bigo-graph bigo-on', 'bigo-graph bigo-ologn', 'bigo-graph bigo-unknown']);
+      Code.expect(group.find('td.complexity-breakdown use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-ologn', '#curve-unknown']);
+      Code.expect(group.find('td.complexity-total').length).to.equal(1);
+      Code.expect(group.find('td.complexity-total').attr('rowspan')).to.equal('4');
+      Code.expect(group.find('td.complexity-total .bigo-graph').hasClass('bigo-on')).to.be.true();
+      Code.expect(group.filter('.complexity-end').length).to.equal(1);
+      Code.expect(rows.eq(4).hasClass('complexity-end')).to.be.true();
+      Code.expect(group.filter('.complexity-unknown').length).to.equal(0);
 
-      const second = rows.eq(3);
-      Code.expect(second.find('th').text()).to.include('no function calls');
+      Code.expect(rows.eq(6).find('th').text()).to.include('no function calls');
+    });
+
+    lab.test('continues each call with the steps it is made of, small charts with their names below', async function () {
+      const complexity = {
+        overall: 'onlogn',
+        calls: [
+          { code: 'data.sort()', cls: 'onlogn', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'onlogn' }, { name: 'back', cls: 'on' }], moreSteps: 2 },
+          { code: 'x.push(1)', cls: 'o1' }
+        ],
+        space: { overall: 'on', items: [{ code: 'data.sort()', cls: 'on', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'on' }] }, { code: 'out', cls: 'on' }] }
+      };
+      pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'data.sort()', defer: 'n', complexity }], [], []]));
+
+      const $ = cheerio.load((await server.inject(request)).payload);
+      const rows = $('tr.complexity-row');
+      Code.expect(rows.length).to.equal(4);
+
+      const time = rows.eq(0).find('.bigo-steps');
+      Code.expect(time.attr('aria-label')).to.equal('What data.sort() is made of');
+      Code.expect(time.find('.bigo-step:not(.bigo-more) .bigo-step-name').map((i, el) => $(el).text()).get()).to.equal(['copy', 'merge', 'back']);
+      Code.expect(time.find('.bigo-mini').map((i, el) => $(el).attr('class')).get()).to.equal([
+        'bigo-graph bigo-mini bigo-on', 'bigo-graph bigo-mini bigo-onlogn', 'bigo-graph bigo-mini bigo-on'
+      ]);
+      Code.expect(time.find('use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-onlogn', '#curve-on']);
+      Code.expect(time.find('.bigo-step').first().attr('title')).to.equal('copy: O(n)');
+      Code.expect(time.find('.bigo-sr').first().text()).to.equal('O(n)');
+      Code.expect(time.find('.bigo-more').text()).to.equal('+2 more');
+      Code.expect(rows.eq(1).find('.bigo-steps').length).to.equal(0);
+
+      // memory steps are drawn like the memory chart: dashed
+      const space = rows.eq(2).find('.bigo-steps');
+      Code.expect(space.find('.bigo-mini').first().hasClass('space-graph')).to.be.true();
+      Code.expect(rows.eq(2).find('td.complexity-total').attr('rowspan')).to.equal('2');
+      Code.expect(rows.eq(3).hasClass('complexity-end')).to.be.true();
+
+      // the new chart classes have curves in the sprite
+      Code.expect($('#curve-ologn2, #curve-onlogn2, #curve-oexp').length).to.equal(3);
     });
 
     lab.test('marks undecidable results as unknown', async function () {

@@ -4,7 +4,7 @@
 //
 // The code is only ever parsed (acorn), never executed. Costs are modelled as
 // n^a * (log n)^b pairs and rounded UP to the next class we can display:
-// O(1), O(log n), O(n), O(n log n), O(n^2), O(n^3), "higher" or "unknown".
+// O(1), O(log n), O(log² n), O(n), O(n log n), O(n log² n), O(n^2), O(n^3), "higher" (n^4 and up), exponential or "unknown".
 //
 // Rules of thumb (all of them are heuristics, hence "estimate"):
 //  - `n` is the size of whatever the called function iterates over; the actual
@@ -23,7 +23,7 @@
 //  - Recursion (conservative): one self call that halves its input costs
 //    work * log n (work if work is already linear), two halving calls cost
 //    n (constant work) or n log n (linear work), a non-halving single self
-//    call costs work * n and several non-halving self calls are "higher"
+//    call costs work * n and several non-halving self calls are exponential
 //    (exponential). Mutual recursion is "unknown".
 //  - Calls compose: cost(call) = cost(callee body) + cost(arguments).
 //  - A second pass (SpaceAnalyzer) estimates peak extra memory with the same classes, see its comment.
@@ -33,8 +33,9 @@
 const acorn = require('acorn');
 const regex = require('./regex');
 const builtins = require('./builtins');
+const table = require('./builtinTable');
 
-const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000 };
+const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000, maxInternals: 8 };
 
 const REGEX_METHODS = new Set(['test', 'exec', 'match', 'matchAll', 'replace', 'replaceAll', 'search', 'split']);
 
@@ -48,7 +49,7 @@ const ZERO = { n: 0, l: 0 };
 const LOG = { n: 0, l: 1 };
 const LINEAR = { n: 1, l: 0 };
 const NLOGN = { n: 1, l: 1 };
-const HIGHER = { n: 9, l: 0 };
+const EXPONENTIAL = { n: 99, l: 0 };
 const UNKNOWN = null;
 
 const isZero = (c) => c.n === 0 && c.l === 0;
@@ -63,25 +64,32 @@ const classify = (c) => {
   }
   const { n, l } = c;
   if (n === 0) {
-    return l === 0 ? 'o1' : (l === 1 ? 'ologn' : 'on');
+    return l === 0 ? 'o1' : (l === 1 ? 'ologn' : 'ologn2');
   }
   if (n === 1) {
-    return l === 0 ? 'on' : (l === 1 ? 'onlogn' : 'on2');
+    return l === 0 ? 'on' : (l === 1 ? 'onlogn' : 'onlogn2');
   }
   if (n === 2) {
     return l === 0 ? 'on2' : 'on3';
   }
+  if (n >= EXPONENTIAL.n) {
+    return 'oexp';
+  }
+
   return (n === 3 && l === 0) ? 'on3' : 'higher';
 };
 
 const CLASSES = {
   o1: { label: 'O(1)', name: 'constant', curve: 'curve-o1' },
   ologn: { label: 'O(log n)', name: 'logarithmic', curve: 'curve-ologn' },
+  ologn2: { label: 'O(log² n)', name: 'polylogarithmic', curve: 'curve-ologn2' },
   on: { label: 'O(n)', name: 'linear', curve: 'curve-on' },
   onlogn: { label: 'O(n log n)', name: 'linearithmic', curve: 'curve-onlogn' },
+  onlogn2: { label: 'O(n log² n)', name: 'between linearithmic and quadratic', curve: 'curve-onlogn2' },
   on2: { label: 'O(n²)', name: 'quadratic', curve: 'curve-on2' },
   on3: { label: 'O(n³)', name: 'cubic', curve: 'curve-on3' },
   higher: { label: 'O(n⁴+)', name: 'worse than cubic', curve: 'curve-higher' },
+  oexp: { label: 'O(2ⁿ)', name: 'exponential', curve: 'curve-oexp' },
   unknown: { label: 'unknown', name: 'could not be determined', curve: 'curve-unknown' }
 };
 
@@ -242,6 +250,7 @@ class Analyzer {
     this.listeners = []; // functions registered with addEventListener
     this.domParents = new Set(); // names of nodes that get children appended
     this.frames = [];
+    this.field = 1; // which part of a table step this analyzer reads: 1 = time, 2 = memory
   }
 
   tick () {
@@ -687,6 +696,15 @@ class Analyzer {
       return UNKNOWN; // mutual recursion
     }
 
+    return this.inFunction(fn, idx, inline, args, (frame) => {
+      const work = this.cost(fn.body);
+      return frame.sites === 0 ? work : this.recursive(fn, work, frame.sites);
+    });
+  }
+
+  // runs `run` with the scope a call of `fn` sees: its parameters (bound to the callbacks and constants in `args`)
+  // on top of the scope it was defined in
+  inFunction (fn, idx, inline, args, run) {
     const frame = { fn, inline, sites: 0 };
     const callbacks = fn.params.map((p, i) => (p.type === 'Identifier' && args[i]) ? (args[i].bound || this.functionValue(args[i])) : null);
     const numbers = fn.params.map((p, i) => (p.type === 'Identifier' && args[i]) ? this.numberValue(args[i]) : null);
@@ -703,8 +721,7 @@ class Analyzer {
 
     this.scopes.push(params);
     try {
-      const work = this.cost(fn.body);
-      return frame.sites === 0 ? work : this.recursive(fn, work, frame.sites);
+      return run(frame);
     } finally {
       this.scopes = saved;
       this.frames.pop();
@@ -727,7 +744,7 @@ class Analyzer {
       return mul(work, { n: Math.ceil(Math.log2(sites)), l: 0 });
     }
 
-    return sites === 1 ? mul(work, LINEAR) : HIGHER;
+    return sites === 1 ? mul(work, LINEAR) : EXPONENTIAL;
   }
 
   // the number literal an argument expression is known to be (itself, or a never-reassigned constant), else null
@@ -852,7 +869,7 @@ class Analyzer {
 
     const elements = (this.b.CALLBACK_METHODS.has(name) && receiver.type === 'Identifier' && this.fnSets.has(receiver.name)) ? { multi: this.fnSets.get(receiver.name) } : null;
     const cost = this.builtinMethod(name, recv, this.sizeCost(receiver), this.callbackCost(node.arguments[0], elements), node);
-    return (cost !== UNKNOWN && this.backtracks(name, node)) ? HIGHER : cost;
+    return (cost !== UNKNOWN && this.backtracks(name, node)) ? EXPONENTIAL : cost;
   }
 
   // the built-in a name stands for (`var Kind = Float64Array`), or the name itself
@@ -1068,17 +1085,14 @@ class Analyzer {
   // Math.x(), Object.keys(x), JSON.parse(x), Array.from(x, fn) ...; undefined when `ns.name` is not a known built-in
   staticCall (node, ns, name) {
     const first = node.arguments[0];
-    if (this.b.O1_NAMESPACES.has(ns)) {
-      return ZERO;
-    }
-    if (this.b.N_STATICS.has(ns) && (this.b.N_STATICS.get(ns) === null || this.b.N_STATICS.get(ns).has(name))) {
-      return this.staticSize(name, node.arguments);
-    }
-    if (this.b.O1_STATICS.has(ns) && this.b.O1_STATICS.get(ns).has(name)) {
-      return ZERO;
-    }
     if ((ns === 'Array' || this.b.TYPED_ARRAYS.has(ns)) && name === 'from') {
       return first ? this.fromCost(this.sizeCost(first), this.callbackCost(node.arguments[1])) : ZERO;
+    }
+    if (this.b.N_STATICS.has(ns) && this.b.N_STATICS.get(ns).has(name)) {
+      return this.staticSize(name, node.arguments);
+    }
+    if (this.b.O1_NAMESPACES.has(ns) || (this.b.O1_STATICS.has(ns) && this.b.O1_STATICS.get(ns).has(name))) {
+      return ZERO;
     }
 
     return undefined;
@@ -1161,6 +1175,190 @@ class Analyzer {
 
     return out;
   }
+
+  // ---- what a call is made of ----------------------------------------------------
+
+  // a fresh time and step budget, for work done after the answer is known
+  resetBudget () {
+    this.steps = 0;
+    this.deadline = Date.now() + this.limits.maxMs;
+  }
+
+  // the owners of the methods a receiver most likely has, best first (the table keeps one row per owner)
+  ownerHints (receiver) {
+    const found = receiver.type === 'Identifier' ? this.lookup(receiver.name) : null;
+    const init = found && found.entry.kind === 'var' && found.entry.init ? found.entry.init : receiver;
+    if (stringLiteral(init) || init.type === 'TemplateLiteral') {
+      return ['String.prototype'];
+    }
+    if (init.type === 'ArrayExpression') {
+      return ['Array.prototype'];
+    }
+    if (init.type === 'Literal') {
+      return [init.regex ? 'RegExp.prototype' : 'Number.prototype'];
+    }
+    if (init.type === 'NewExpression' && init.callee.type === 'Identifier') {
+      return [this.b.TYPED_ARRAYS.has(init.callee.name) ? '%TypedArray%.prototype' : `${init.callee.name}.prototype`];
+    }
+
+    return [];
+  }
+
+  // the table row a call runs, with the sizes its steps are measured in; null when it is not a known built-in
+  builtinRow (node) {
+    const { callee } = node;
+    const first = node.arguments[0];
+    const sized = (arg) => ((!arg || numberLiteral(arg) || arg.type === 'ArrayExpression') ? ZERO : this.sizeCost(arg));
+    if (node.type === 'NewExpression') {
+      const alias = callee.type === 'Identifier' ? this.builtinName(callee.name) : null;
+      const row = alias && !this.lookup(alias) ? table.get(`new ${alias}`) : null;
+      return row ? { row, size: sized(first), callback: first } : null;
+    }
+    if (callee.type === 'Identifier') {
+      const row = this.lookup(callee.name) ? null : table.get(callee.name);
+      return row ? { row, size: first ? this.sizeCost(first) : ZERO, callback: null } : null;
+    }
+
+    const name = callee.type === 'MemberExpression' ? memberName(callee) : null;
+    if (name === null || name === 'call' || name === 'apply' || this.methods.has(name)) {
+      return null; // call / apply are costed as the function they borrow
+    }
+
+    const receiver = callee.object;
+    const ns = receiver.type === 'Identifier' ? this.builtinName(receiver.name) : null;
+    const owned = ns !== null && !this.lookup(ns) ? (table.get(`${ns}.${name}`) || (this.b.TYPED_ARRAYS.has(ns) ? table.get(`%TypedArray%.${name}`) : undefined)) : undefined;
+    if (owned) {
+      return { row: owned, size: first ? this.sizeCost(first) : ZERO, callback: name === 'from' ? node.arguments[1] : first };
+    }
+
+    const dom = table.dom(name);
+    if (dom) {
+      return { row: dom, size: name === 'insertAdjacentHTML' ? (node.arguments[1] ? this.sizeCost(node.arguments[1]) : ZERO) : this.subtreeCost(first), callback: null };
+    }
+
+    const row = table.method(name, this.ownerHints(receiver));
+    return (row && !row.accessor) ? { row, size: this.sizeCost(receiver), callback: first, receiver, name } : null;
+  }
+
+  // the cost a step's time (or memory) token stands for
+  tokenCost (token, ctx) {
+    const [kind, withCallback] = token.split('*');
+    if (kind === 'unknown') {
+      return UNKNOWN;
+    }
+    if (kind === 'cb') {
+      return ctx.callback;
+    }
+
+    let cost = ctx.size; // n, sized, subtree, markup
+    if (kind === '1' || kind === 'log' || kind === 'arg') {
+      cost = { 1: ZERO, log: LOG, arg: ctx.arg }[kind];
+    } else if (kind === 'nlogn') {
+      cost = isZero(ctx.size) ? ZERO : mul(ctx.size, LOG);
+    }
+
+    return withCallback ? mul(cost, ctx.callback) : cost;
+  }
+
+  // the steps of a built-in call: the table's, in the units of this call; null when it is not a known built-in
+  builtinSteps (node) {
+    const found = this.builtinRow(node);
+    if (!found) {
+      return null;
+    }
+
+    const { row } = found;
+    const profile = row[this.b.engine];
+    const steps = (profile.shared && !this.storedString(found.name, found.receiver)) ? row.spec.steps : profile.steps;
+    if (!steps || steps.length < 2) {
+      return [];
+    }
+
+    const first = node.arguments[0];
+    const ctx = {
+      size: found.size,
+      arg: first ? this.boundCost(first) : ZERO,
+      callback: found.callback ? this.callbackCost(found.callback) : ZERO
+    };
+    return steps.map((step) => ({ name: step[0], cost: this.tokenCost(step[this.field], ctx) }));
+  }
+
+  // the function a call runs when the page defined it, with the scope level it was found at
+  userFunction (node) {
+    const { callee } = node;
+    if (node.type !== 'CallExpression') {
+      return null;
+    }
+    if (callee.type === 'Identifier') {
+      const found = this.lookup(callee.name);
+      return found && found.entry.kind === 'fn' ? { fn: found.entry.node, idx: found.idx } : null;
+    }
+
+    const name = callee.type === 'MemberExpression' ? memberName(callee) : null;
+    const own = name === null ? null : this.methods.get(name);
+    if (own) {
+      return { fn: own[0], idx: 0 };
+    }
+
+    return isFn(callee) ? { fn: callee, idx: this.scopes.length - 1 } : null;
+  }
+
+  // short name of what a call calls: `helper`, `arr.sort`, `Math.max`, `new Map`
+  callName (node) {
+    const { callee } = node;
+    if (node.type === 'NewExpression') {
+      return `new ${callee.type === 'Identifier' ? callee.name : '…'}`;
+    }
+    if (callee.type === 'Identifier') {
+      return callee.name;
+    }
+
+    const name = callee.type === 'MemberExpression' ? memberName(callee) : null;
+    if (name === null) {
+      return 'call';
+    }
+
+    const owner = rootName(callee.object);
+    return owner === '?' ? `.${name}` : `${owner}.${name}`;
+  }
+
+  // the steps of a function the page defined: its loops, and the calls it makes outside of loops
+  bodySteps (fn) {
+    const { body } = fn;
+    const statements = body.type === 'BlockStatement' ? body.body : [body];
+    const collect = () => {
+      const out = [];
+      for (const stmt of statements) {
+        if (/^(For|While|DoWhile)/.test(stmt.type)) {
+          out.push({ name: `${LOOP_NAMES[stmt.type]} loop`, cost: this.cost(stmt) });
+          continue;
+        }
+        for (const { node, mult } of this.listCalls({ body: [stmt] })) {
+          out.push({ name: this.callName(node), cost: mul(mult, safe(() => this.cost(node), UNKNOWN)) });
+        }
+      }
+
+      return out;
+    };
+
+    return body.type === 'BlockStatement' ? this.withScope(statements, collect) : collect();
+  }
+
+  /**
+   * The steps one top-level call is made of, each with its own class; none when it is a single operation.
+   *
+   * @returns {{steps: Array<{name: string, cls: string}>, more: number}}
+   */
+  internals (node) {
+    let steps = this.builtinSteps(node);
+    if (steps === null) {
+      const user = this.userFunction(node);
+      steps = user ? this.inFunction(user.fn, user.idx, false, node.arguments, () => this.bodySteps(user.fn)) : [];
+    }
+
+    const shown = steps.slice(0, this.limits.maxInternals).map(({ name, cost }) => ({ name, cls: classify(cost) }));
+    return { steps: shown, more: steps.length - shown.length };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1171,6 +1369,8 @@ class Analyzer {
 //    iteration, nested growing loops multiply
 //  - recursion keeps one frame per level: log n deep when the input is halved, n deep otherwise
 // ---------------------------------------------------------------------------
+
+const LOOP_NAMES = { ForStatement: 'for', ForInStatement: 'for…in', ForOfStatement: 'for…of', WhileStatement: 'while', DoWhileStatement: 'do…while' };
 
 const IN_PLACE_STATICS = new Set(['assign', 'freeze']);
 const GROWTH_METHODS = new Set(['push', 'unshift', 'add', 'set', 'appendChild', 'insertBefore', 'insertAdjacentHTML']);
@@ -1205,6 +1405,7 @@ class SpaceAnalyzer extends Analyzer {
     super(limits);
     this.grown = new Set(); // names of collections that grow in the current loop body / function
     this.retained = []; // { cost, names } of the growing loops completed inside the current loop body / function
+    this.field = 2;
   }
 
   // does `x[i] = v` add slots to `name`? Only when it is built up from an empty literal: writing into an array that
@@ -1470,7 +1671,7 @@ const snippet = (code, node) => {
 };
 
 // bump when the rules change: stored estimates with an older version are analyzed again on their next view
-const VERSION = 7;
+const VERSION = 8;
 
 const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 
@@ -1538,6 +1739,20 @@ const prepare = (Cls, program, pageCode, limits) => {
   return analyzer;
 };
 
+// what each listed call is made of, once the answer is known (a call that is a single operation gets nothing)
+const withInternals = (analyzer, calls, listed, limits) => {
+  analyzer.resetBudget();
+  listed.forEach((item, i) => {
+    const { steps, more } = safe(() => analyzer.internals(calls[i].node), { steps: [], more: 0 });
+    if (steps.length) {
+      item.steps = steps;
+      if (more) {
+        item.moreSteps = more;
+      }
+    }
+  });
+};
+
 const analyzeSpace = (program, code, calls, pageCode, limits) => {
   const analyzer = prepare(SpaceAnalyzer, program, pageCode, limits);
   const items = calls.slice(0, limits.maxCalls).map(({ node, mult }) => {
@@ -1545,6 +1760,8 @@ const analyzeSpace = (program, code, calls, pageCode, limits) => {
     // a call that grows a collection keeps one more element per iteration of the loops around it
     return { code: snippet(code, node), cls: classify(cost === UNKNOWN ? UNKNOWN : (safe(() => analyzer.growthTarget(node), null) === null ? cost : max(cost, mult))) };
   });
+
+  withInternals(analyzer, calls, items, limits);
 
   const variables = safe(() => analyzer.listVariables(program), []).slice(0, limits.maxCalls);
   return { overall: classify(safe(() => analyzer.cost(program), UNKNOWN)), items, variables };
@@ -1564,6 +1781,7 @@ const analyzeOne = (code, pageCode, limits) => {
   }));
 
   const overall = classify(safe(() => analyzer.cost(program), UNKNOWN));
+  withInternals(analyzer, calls, listed, limits);
   const space = analyzeSpace(program, code, calls, pageCode, limits);
   return result(overall, listed, Object.assign({ space }, calls.length > listed.length ? { more: calls.length - listed.length } : {}));
 };
@@ -1587,14 +1805,24 @@ const present = (value, engine) => {
     return Object.assign({ cls: key }, CLASSES[key]);
   };
   const space = data.space && Array.isArray(data.space.items) ? data.space : null;
-  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls));
+  const stepsOf = (item) => (Array.isArray(item.steps)
+    ? {
+        steps: item.steps.slice(0, DEFAULT_LIMITS.maxInternals).map((s) => Object.assign({ step: String(s.name).slice(0, 40) }, info(s.cls))),
+        moreSteps: Number(item.moreSteps) || 0
+      }
+    : {});
+  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item));
+  // the last row of a group carries the heavy border; `rows` is how many rows the group's total cell spans
+  const rows = (items, extra = 0) => items.map((item, i) => Object.assign(rate(item), { end: i === items.length - 1 && !extra }));
   return {
     space: space && {
       overall: info(space.overall),
-      items: space.items.concat(Array.isArray(space.variables) ? space.variables : []).map(rate)
+      items: rows(space.items.concat(Array.isArray(space.variables) ? space.variables : [])),
+      rows: Math.max(1, space.items.length + (Array.isArray(space.variables) ? space.variables.length : 0))
     },
     overall: info(data.overall),
-    calls: data.calls.map((c) => Object.assign({ code: String(c.code) }, info(c.cls))),
+    calls: rows(data.calls, data.more || 0),
+    rows: Math.max(1, data.calls.length + (data.more ? 1 : 0)),
     more: data.more || 0,
     unknown: info(data.overall).cls === 'unknown'
   };

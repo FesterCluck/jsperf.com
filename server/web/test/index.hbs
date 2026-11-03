@@ -115,6 +115,22 @@
         <path d="M5,25 Q8,25 11,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
         <circle cx="11" cy="3" r="2.3" fill="currentColor"/>
       </g>
+      <g id="curve-ologn2">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q24,15 52,9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="52" cy="9" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-onlogn2">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q21,22 33,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="33" cy="3" r="2.3" fill="currentColor"/>
+      </g>
+      <g id="curve-oexp">
+        <use href="#bigo-guides"/>
+        <path d="M5,25 Q6,25 8,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="8" cy="3" r="2.3" fill="currentColor"/>
+        <text x="30" y="14" text-anchor="middle" font-size="12" font-weight="bold" fill="currentColor">2ⁿ</text>
+      </g>
       <g id="icon-space">
         <rect x="1" y="1" width="10" height="3" rx="1" fill="currentColor"/>
         <rect x="1" y="4.5" width="10" height="3" rx="1" fill="currentColor" opacity=".7"/>
@@ -159,59 +175,61 @@
           <td id="results-{{inc @index}}" class="results">pending…</td>
         </tr>
         {{#with complexityView}}
-          <tr class="complexity-row{{#if unknown}} complexity-unknown{{/if}}">
-            <th scope="row">
-              <ul class="call-list">
-                {{#each calls}}
-                  <li><code>{{code}}</code></li>
-                {{else}}
-                  <li><em>no function calls</em></li>
-                {{/each}}
-                {{#if more}}<li><em>+{{more}} more</em></li>{{/if}}
-              </ul>
-            </th>
-            <td class="complexity-breakdown">
-              <ul class="call-list">
-                {{#each calls}}
-                  <li>
-                    <span class="bigo-graph bigo-{{cls}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
-                  </li>
-                {{else}}
-                  <li></li>
-                {{/each}}
-                {{#if more}}<li></li>{{/if}}
-              </ul>
-            </td>
-            <td class="complexity-total">
-              <span class="bigo-graph bigo-{{overall.cls}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
-            </td>
-          </tr>
-          {{#with space}}
-            <tr class="complexity-row space-row">
-              <th scope="row">
-                <ul class="call-list">
-                  {{#each items}}
-                    <li><code>{{code}}</code></li>
-                  {{else}}
-                    <li></li>
-                  {{/each}}
-                </ul>
-              </th>
+          {{#each calls}}
+            <tr class="complexity-row{{#if end}} complexity-end{{/if}}{{#if ../unknown}} complexity-unknown{{/if}}">
+              <th scope="row"><code>{{code}}</code></th>
               <td class="complexity-breakdown">
-                <ul class="call-list">
-                  {{#each items}}
-                    <li>
-                      <span class="bigo-graph space-graph bigo-{{cls}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
-                    </li>
-                  {{else}}
-                    <li></li>
-                  {{/each}}
-                </ul>
+                <div class="bigo-line">
+                  <span class="bigo-graph bigo-{{cls}}" title="{{label}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
+                  {{> bigo-steps}}
+                </div>
               </td>
+              {{#if @first}}
+                <td class="complexity-total" rowspan="{{../rows}}">
+                  <span class="bigo-graph bigo-{{../overall.cls}}" title="{{../overall.label}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{../overall.curve}}"/></svg></span>
+                </td>
+              {{/if}}
+            </tr>
+          {{else}}
+            <tr class="complexity-row complexity-end{{#if unknown}} complexity-unknown{{/if}}">
+              <th scope="row"><em>no function calls</em></th>
+              <td class="complexity-breakdown"></td>
               <td class="complexity-total">
-                <span class="bigo-graph space-graph bigo-{{overall.cls}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
+                <span class="bigo-graph bigo-{{overall.cls}}" title="{{overall.label}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
               </td>
             </tr>
+          {{/each}}
+          {{#if more}}
+            <tr class="complexity-row complexity-end">
+              <th scope="row"><em>+{{more}} more</em></th>
+              <td class="complexity-breakdown"></td>
+            </tr>
+          {{/if}}
+          {{#with space}}
+            {{#each items}}
+              <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}">
+                <th scope="row">{{#if code}}<code>{{code}}</code>{{/if}}</th>
+                <td class="complexity-breakdown">
+                  <div class="bigo-line">
+                    <span class="bigo-graph space-graph bigo-{{cls}}" title="{{label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
+                    {{> bigo-steps space=true}}
+                  </div>
+                </td>
+                {{#if @first}}
+                  <td class="complexity-total" rowspan="{{../rows}}">
+                    <span class="bigo-graph space-graph bigo-{{../overall.cls}}" title="{{../overall.label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{../overall.curve}}"/></svg></span>
+                  </td>
+                {{/if}}
+              </tr>
+            {{else}}
+              <tr class="complexity-row space-row complexity-end">
+                <th scope="row"></th>
+                <td class="complexity-breakdown"></td>
+                <td class="complexity-total">
+                  <span class="bigo-graph space-graph bigo-{{overall.cls}}" title="{{overall.label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
+                </td>
+              </tr>
+            {{/each}}
           {{/with}}
         {{/with}}
       {{/each}}
