@@ -197,13 +197,13 @@ lab.experiment('web/test plugin', function () {
           { code: 'data.sort()', cls: 'onlogn', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'onlogn' }, { name: 'back', cls: 'on' }], moreSteps: 2 },
           { code: 'x.push(1)', cls: 'o1' }
         ],
-        space: { overall: 'on', items: [{ code: 'data.sort()', cls: 'on', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'on' }] }], variables: [{ code: 'out', cls: 'on' }] }
+        space: { overall: 'on', items: [{ code: 'data.sort()', kind: 'call', cls: 'on', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'on' }] }, { code: 'out', kind: 'variable', cls: 'on' }, { code: 'for (;;)', kind: 'loop', cls: 'o1', perPass: true, steps: [{ name: 'step', cls: 'o1' }] }, { code: '2 functions', kind: 'functions', cls: 'o1' }, { code: 'x', kind: 'constructor', cls: 'o1' }], more: 3 }
       };
       pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'data.sort()', defer: 'n', complexity }], [], []]));
 
       const $ = cheerio.load((await server.inject(request)).payload);
       const rows = $('tr.complexity-row');
-      Code.expect(rows.length).to.equal(4);
+      Code.expect(rows.length).to.equal(8);
 
       const time = rows.eq(0).find('.bigo-steps');
       Code.expect(time.attr('aria-label')).to.equal('What data.sort() is made of');
@@ -220,19 +220,23 @@ lab.experiment('web/test plugin', function () {
       // memory steps are drawn like the memory chart: dashed
       const space = rows.eq(2).find('.bigo-steps');
       Code.expect(space.find('.bigo-mini').first().hasClass('space-graph')).to.be.true();
-      Code.expect(rows.eq(2).find('td.complexity-total').attr('rowspan')).to.equal('2');
-      Code.expect(rows.eq(3).hasClass('complexity-end')).to.be.true();
+      Code.expect(rows.eq(2).find('td.complexity-total').attr('rowspan')).to.equal('6');
+      Code.expect(rows.eq(7).hasClass('complexity-end')).to.be.true();
+      Code.expect(rows.eq(7).find('th').text()).to.equal('+3 more');
 
-      // the memory rows have a heading of their own, and the variable among them says so
+      // the space rows have a heading of their own, and what is not a call says what it is
       const headings = $('tr.complexity-heading th').map((i, el) => $(el).text()).get();
       Code.expect(headings.length).to.equal(2);
       Code.expect(headings[0]).to.startWith('Time');
-      Code.expect(headings[1]).to.startWith('Extra memory');
+      Code.expect(headings[1]).to.startWith('Space');
       Code.expect(headings[1]).to.include('beyond the inputs');
       Code.expect(rows.eq(2).find('.complexity-tag').length).to.equal(0);
       Code.expect(rows.eq(3).find('.complexity-tag').text()).to.equal('variable');
-      Code.expect(rows.eq(3).hasClass('space-variable')).to.be.true();
       Code.expect(rows.eq(3).find('th code').text()).to.equal('out');
+      Code.expect(rows.eq(4).find('.complexity-tag').text()).to.equal('loop');
+      Code.expect(rows.eq(4).find('.bigo-each').text()).to.equal('each pass');
+      Code.expect(rows.eq(5).find('.complexity-tag').text()).to.equal('created');
+      Code.expect(rows.eq(6).find('.complexity-tag').length).to.equal(0);
 
       // the new chart classes have curves in the sprite
       Code.expect($('#curve-ologn2, #curve-onlogn2, #curve-oexp').length).to.equal(3);

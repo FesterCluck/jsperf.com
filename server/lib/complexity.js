@@ -35,7 +35,7 @@ const regex = require('./regex');
 const builtins = require('./builtins');
 const table = require('./builtinTable');
 
-const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000, maxInternals: 8, maxNesting: 3 };
+const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000, maxInternals: 8, maxNesting: 3, maxRows: 24 };
 
 const REGEX_METHODS = new Set(['test', 'exec', 'match', 'matchAll', 'replace', 'replaceAll', 'search', 'split']);
 
@@ -102,6 +102,9 @@ const CLASSES = {
 // ---------------------------------------------------------------------------
 
 const isNode = (v) => v !== null && typeof v === 'object' && typeof v.type === 'string';
+// what a row of the space list says about the kind of thing it is, when that is not a call
+const TAGS = { variable: 'variable', loop: 'loop', functions: 'created' };
+
 const isFn = (n) => n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression' || n.type === 'FunctionDeclaration';
 // `fn.bind(...)`: calling the result runs fn
 const isBind = (n) => n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && !n.callee.computed && n.callee.property.name === 'bind';
@@ -181,6 +184,22 @@ const patternNames = (pattern, out) => {
     return node.type !== 'MemberExpression'; // `obj.x = 1` does not reassign obj
   });
   return out;
+};
+
+// the names a declaration pattern binds: `[a, { b: c, ...d }, e = 1]` binds a, c, d and e
+const boundNames = (pattern) => {
+  switch (pattern.type) {
+    case 'ArrayPattern':
+      return pattern.elements.filter(Boolean).flatMap(boundNames);
+    case 'ObjectPattern':
+      return pattern.properties.flatMap((p) => boundNames(p.type === 'Property' ? p.value : p));
+    case 'AssignmentPattern':
+      return boundNames(pattern.left);
+    case 'RestElement':
+      return boundNames(pattern.argument);
+    default:
+      return [pattern.name];
+  }
 };
 
 // every name that is assigned somewhere in the subtree (=, +=, ++, for-in/of targets)
@@ -1702,8 +1721,8 @@ class SpaceAnalyzer extends Analyzer {
     return found.reduce((acc, f) => max(acc, f.cost), body);
   }
 
-  // variables of the test body that hold on to a lot of memory, with the loops that grow them
-  listVariables (program) {
+  // what each variable of the test body holds on to, by name: what it was set to, and what the loops that grow it add
+  heldBy (program) {
     const rated = new Map();
     const note = (name, cost) => {
       rated.set(name, rated.has(name) ? max(rated.get(name), cost) : cost);
@@ -1737,7 +1756,7 @@ class SpaceAnalyzer extends Analyzer {
     };
 
     program.body.forEach((stmt) => visit(stmt, ZERO, 0));
-    return [...rated].map(([name, cost]) => ({ code: name, cls: classify(cost) })).filter((v) => v.cls !== 'o1');
+    return rated;
   }
 }
 
@@ -1774,7 +1793,7 @@ const snippet = (code, node) => {
 };
 
 // bump when the rules change: stored estimates with an older version are analyzed again on their next view
-const VERSION = 11;
+const VERSION = 12;
 
 const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 
@@ -1856,24 +1875,80 @@ const withInternals = (analyzer, calls, listed, limits) => {
   });
 };
 
-const analyzeSpace = (program, code, calls, pageCode, limits) => {
+// the row with the steps `steps()` returns, as `internals` does ({ steps, more }), when it has any
+const withSteps = (row, steps) => {
+  const { steps: shown, more } = safe(steps, { steps: [], more: 0 });
+  if (shown.length) {
+    row.steps = shown;
+    if (more) {
+      row.moreSteps = more;
+    }
+  }
+
+  return row;
+};
+
+// the text of a loop up to its body: `for (var k = 0; k < n; k++)`
+const loopHeader = (code, stmt) => {
+  const text = (stmt.type === 'DoWhileStatement' ? `do … while (${code.slice(stmt.test.start, stmt.test.end)})` : code.slice(stmt.start, stmt.body.start)).replace(/\s+/g, ' ').trim();
+  return text.length > 80 ? text.slice(0, 77) + '...' : text;
+};
+
+// one row for each place the test body allocates, in the order it appears: the variables it declares, its loops, its calls
+const spaceRows = (analyzer, program, code) => {
+  const held = analyzer.heldBy(program);
+  const rows = [];
+  let functions = 0;
+  for (const stmt of program.body) {
+    if (stmt.type === 'FunctionDeclaration') {
+      functions++;
+    } else if (stmt.type === 'VariableDeclaration') {
+      for (const { id, init } of stmt.declarations) {
+        if (init && isFn(init)) {
+          functions++;
+          continue;
+        }
+
+        const call = init && (init.type === 'CallExpression' || init.type === 'NewExpression') ? init : null;
+        for (const name of boundNames(id)) {
+          const row = { code: name, kind: 'variable', cls: classify(held.get(name) || ZERO) };
+          rows.push(call && id.type === 'Identifier' ? withSteps(row, () => analyzer.internals(call)) : row);
+        }
+      }
+    } else if (/^(For|While|DoWhile)/.test(stmt.type)) {
+      const row = { code: loopHeader(code, stmt), kind: 'loop', cls: classify(safe(() => analyzer.cost(stmt), UNKNOWN)), perPass: true };
+      rows.push(withSteps(row, () => analyzer.shownSteps(analyzer.expandSteps(analyzer.bodySteps(stmt.body), 0, new Set()))));
+    } else {
+      for (const { node, mult } of safe(() => analyzer.listCalls({ body: [stmt] }), [])) {
+        const cost = safe(() => analyzer.cost(node), UNKNOWN);
+        // a call that grows a collection keeps one more element per iteration of the loops around it
+        const cls = classify(cost === UNKNOWN ? UNKNOWN : (safe(() => analyzer.growthTarget(node), null) === null ? cost : max(cost, mul(mult, safe(() => analyzer.growthSlot(node), ZERO)))));
+        rows.push(withSteps({ code: snippet(code, node), kind: 'call', cls }, () => analyzer.internals(node)));
+      }
+    }
+  }
+
+  if (functions) {
+    rows.unshift({ code: `${functions} function${functions === 1 ? '' : 's'}`, kind: 'functions', cls: 'o1' });
+  }
+
+  return rows;
+};
+
+const analyzeSpace = (program, code, pageCode, limits) => {
   const analyzer = prepare(SpaceAnalyzer, program, pageCode, limits);
-  const items = calls.slice(0, limits.maxCalls).map(({ node, mult }) => {
-    const cost = safe(() => analyzer.cost(node), UNKNOWN);
-    // a call that grows a collection keeps one more element per iteration of the loops around it
-    return { code: snippet(code, node), cls: classify(cost === UNKNOWN ? UNKNOWN : (safe(() => analyzer.growthTarget(node), null) === null ? cost : max(cost, mul(mult, safe(() => analyzer.growthSlot(node), ZERO))))) };
-  });
-
-  withInternals(analyzer, calls, items, limits);
-
-  const variables = safe(() => analyzer.listVariables(program), []).slice(0, limits.maxCalls);
-  return { overall: classify(safe(() => analyzer.cost(program), UNKNOWN)), items, variables };
+  analyzer.resetBudget();
+  const rows = safe(() => spaceRows(analyzer, program, code), []);
+  return Object.assign(
+    { overall: classify(safe(() => analyzer.cost(program), UNKNOWN)), items: rows.slice(0, limits.maxRows) },
+    rows.length > limits.maxRows ? { more: rows.length - limits.maxRows } : {}
+  );
 };
 
 const analyzeOne = (code, pageCode, limits) => {
   const program = code.length > limits.maxCodeLength ? null : parse(code);
   if (!program) {
-    return result('unknown', [], { space: { overall: 'unknown', items: [], variables: [] } });
+    return result('unknown', [], { space: { overall: 'unknown', items: [] } });
   }
 
   const analyzer = prepare(Analyzer, program, pageCode, limits);
@@ -1885,7 +1960,7 @@ const analyzeOne = (code, pageCode, limits) => {
 
   const overall = classify(safe(() => analyzer.cost(program), UNKNOWN));
   withInternals(analyzer, calls, listed, limits);
-  const space = analyzeSpace(program, code, calls, pageCode, limits);
+  const space = analyzeSpace(program, code, pageCode, limits);
   return result(overall, listed, Object.assign({ space }, calls.length > listed.length ? { more: calls.length - listed.length } : {}));
 };
 
@@ -1916,14 +1991,15 @@ const present = (value, engine) => {
     s.perPass ? { perPass: true } : {}
   ));
   const stepsOf = (item) => (Array.isArray(item.steps) ? { steps: stepList(item.steps, 0), moreSteps: Number(item.moreSteps) || 0 } : {});
-  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item), item.variable ? { variable: true } : {});
+  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item), Object.hasOwn(TAGS, item.kind) ? { tag: TAGS[item.kind] } : {}, item.perPass ? { perPass: true } : {});
   // the last row of a group carries the heavy border; `rows` is how many rows the group's total cell spans
   const rows = (items, extra = 0) => items.map((item, i) => Object.assign(rate(item), { end: i === items.length - 1 && !extra }));
   return {
     space: space && {
       overall: info(space.overall),
-      items: rows(space.items.concat((Array.isArray(space.variables) ? space.variables : []).map((v) => Object.assign({ variable: true }, v)))),
-      rows: Math.max(1, space.items.length + (Array.isArray(space.variables) ? space.variables.length : 0))
+      items: rows(space.items, space.more || 0),
+      more: space.more || 0,
+      rows: Math.max(1, space.items.length + (space.more ? 1 : 0))
     },
     overall: info(data.overall),
     calls: rows(data.calls, data.more || 0),

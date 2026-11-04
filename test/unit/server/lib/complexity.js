@@ -608,7 +608,7 @@ lab.experiment('complexity analyzer', () => {
 
   lab.experiment('safety', () => {
     lab.test('syntax errors are unknown, never throw', () => {
-      Code.expect(analyzeTest(none, 'for (;;', { engine: 'spec' })).to.equal({ estimate: true, version: complexity.VERSION, overall: 'unknown', calls: [], space: { overall: 'unknown', items: [], variables: [] } });
+      Code.expect(analyzeTest(none, 'for (;;', { engine: 'spec' })).to.equal({ estimate: true, version: complexity.VERSION, overall: 'unknown', calls: [], space: { overall: 'unknown', items: [] } });
       Code.expect(analyzeTest(none, '<b>html</b>').overall).to.equal('unknown');
     });
 
@@ -1007,7 +1007,7 @@ lab.experiment('complexity analyzer', () => {
   lab.experiment('memory estimate', () => {
     const page = { setup: 'var data = []; for (var i = 0; i < 100; i++) data.push(i);\nfunction fact(n) { return n <= 1 ? 1 : n * fact(n - 1); }\nfunction half(a, lo, hi) { if (lo > hi) return -1; var m = (lo + hi) >>> 1; return half(a, lo, m - 1); }\nfunction fill(out, x) { out.push(x); }' };
     const space = (code, p = page) => analyzeTest(p, code).space;
-    const names = (code, p = page) => space(code, p).variables.map((v) => `${v.code}:${v.cls}`);
+    const names = (code, p = page) => space(code, p).items.filter((r) => r.kind === 'variable' && r.cls !== 'o1').map((v) => `${v.code}:${v.cls}`);
 
     lab.test('a collection that grows by copies holds every copy', () => {
       const loop = (body) => `var out = []; for (var i = 0; i < data.length; i++) { ${body} }`;
@@ -1036,7 +1036,7 @@ lab.experiment('complexity analyzer', () => {
       // one push outside any loop is a single copy
       Code.expect(space('var out = []; out.push(data.slice(0));').overall).to.equal('on');
       // the calls and the variable are rated the same
-      Code.expect(space(loop('out.push(data.slice(0));')).items.map((c) => c.cls)).to.equal(['on2']);
+      Code.expect(space(loop('out.push(data.slice(0));')).items.map((c) => `${c.kind}:${c.cls}`)).to.equal(['variable:on2', 'loop:on2']);
       Code.expect(names(loop('out.push(data.slice(0));'))).to.equal(['out:on2']);
       Code.expect(names('var out = []; out.push(data.slice(0));')).to.equal(['out:on']);
       // loops multiply the step, whatever depth they are at
@@ -1086,12 +1086,39 @@ lab.experiment('complexity analyzer', () => {
 
     lab.test('unknown calls are unknown', () => {
       Code.expect(space('mystery(data);').overall).to.equal('unknown');
-      Code.expect(analyzeTest(page, 'var = ;').space).to.equal({ overall: 'unknown', items: [], variables: [] });
+      Code.expect(analyzeTest(page, 'var = ;').space).to.equal({ overall: 'unknown', items: [] });
+    });
+
+    lab.test('lists every place the test body allocates, in the order it does', () => {
+      const rows = (code, options) => analyzeTest(page, code, options).space.items.map((r) => `${r.kind}:${r.code}:${r.cls}`);
+      Code.expect(rows('function a() {} var b = function () {}; var c = () => 1; var total = 0; data.sort();')).to.equal(['functions:3 functions:o1', 'variable:total:o1', 'call:data.sort():on']);
+      Code.expect(rows('function a() {}')).to.equal(['functions:1 function:o1']);
+      // a variable takes the size of what it was set to, and of what loops add to it
+      Code.expect(rows('var a = data.slice(); var b = []; for (var i = 0; i < data.length; i++) { b.push(data.slice(0)); }')).to.equal(['variable:a:on', 'variable:b:on2', 'loop:for (var i = 0; i < data.length; i++):on2']);
+      Code.expect(rows('var [x, , y = 1] = data.slice(); var { z, k: w, ...rest } = {}; var [[deep]] = [[1]];')).to.equal(['variable:x:o1', 'variable:y:o1', 'variable:z:o1', 'variable:w:o1', 'variable:rest:o1', 'variable:deep:o1']);
+      // loops of every kind, with their header; a do-while is written the other way round
+      Code.expect(rows('var i = 0; do { i++; } while (i < data.length); while (i--) {} for (var k in data) {} for (var v of data) {}')).to.equal([
+        'variable:i:o1', 'loop:do … while (i < data.length):o1', 'loop:while (i--):o1', 'loop:for (var k in data):o1', 'loop:for (var v of data):o1']);
+      Code.expect(rows('for (var thisIsAVeryLongVariableName = 0; thisIsAVeryLongVariableName < data.length * data.length + data.length; thisIsAVeryLongVariableName++) {}')[0]).to.match(/^loop:for \(var thisIsAVeryLongVariableName = 0; .{20,}\.\.\.:o1$/);
+      // calls outside of declarations and loops
+      Code.expect(rows('if (data.length) { data.slice(); } sink = data.map(function (x) { return x; });')).to.equal(['call:data.slice():on', 'call:data.map(function (x) { return x; }):on']);
+      // only as many rows as fit
+      const many = Array.from({ length: 30 }, (_, i) => `var v${i} = 1;`).join(' ');
+      const listed = analyzeTest(page, many).space;
+      Code.expect(listed.items.length).to.equal(24);
+      Code.expect(listed.more).to.equal(6);
+    });
+
+    lab.test('opens a variable into the call that set it, and a loop into what a pass calls', () => {
+      const items = analyzeTest(page, 'var copy = data.slice().sort(); var n = 3; for (var i = 0; i < data.length; i++) { data.indexOf(i); }').space.items;
+      Code.expect(items[0].steps.map((s) => s.name)).to.equal(['copy elements to a work list', 'merge sort the runs', 'write the order back']);
+      Code.expect(items[1].steps).to.be.undefined();
+      Code.expect(items[2].steps.map((s) => `${s.name}:${s.cls}`)).to.equal(['data.indexOf:o1']);
     });
 
     lab.test('calls and variables are rated', () => {
       const out = space('var out = []; var small = 1; var c = data.slice(); for (var i = 0; i < data.length; i++) { out.push(i); }');
-      Code.expect(out.items.map((c) => `${c.code}:${c.cls}`)).to.equal(['data.slice():on', 'out.push(i):on']);
+      Code.expect(out.items.map((c) => `${c.kind}:${c.code}:${c.cls}`)).to.equal(['variable:out:on', 'variable:small:o1', 'variable:c:on', 'loop:for (var i = 0; i < data.length; i++):on']);
       Code.expect(names('var out = []; var small = 1; var c = data.slice(); for (var i = 0; i < data.length; i++) { out.push(i); }')).to.equal(['out:on', 'c:on']);
       Code.expect(names('function f() { var inner = data.slice(); } this.x.push(1); getList().push(1); f();')).to.equal([]);
     });
@@ -1150,7 +1177,9 @@ lab.experiment('complexity analyzer', () => {
     lab.test('is presented with the call ratings', () => {
       const shown = present(analyzeTest(page, 'var out = []; for (var i = 0; i < data.length; i++) { out.push(i); }'));
       Code.expect(shown.space.overall.cls).to.equal('on');
-      Code.expect(shown.space.items.map((v) => v.code)).to.equal(['out.push(i)', 'out']);
+      Code.expect(shown.space.items.map((v) => v.code)).to.equal(['out', 'for (var i = 0; i < data.length; i++)']);
+      Code.expect(shown.space.items.map((v) => v.tag)).to.equal(['variable', 'loop']);
+      Code.expect(shown.space.items.map((v) => Boolean(v.perPass))).to.equal([false, true]);
       Code.expect(present({ overall: 'o1', calls: [] }).space).to.be.null();
       const stored = { overall: 'on', calls: [{ code: 'a.shift()', cls: 'on' }], engines: { v8: { overall: 'o1', calls: [{ code: 'a.shift()', cls: 'o1' }] } } };
       Code.expect(present(stored).overall.cls).to.equal('on');
@@ -1232,7 +1261,7 @@ lab.experiment('complexity analyzer', () => {
       const { calls, space } = analyzeTest(none, code);
       Code.expect(nested(calls[0].steps)).to.equal(
         'leaf:onlogn[.sort:onlogn[copy elements to a work list:on, merge sort the runs:onlogn, write the order back:on]], for loop:on2[t.indexOf:on]');
-      Code.expect(nested(space.items[0].steps)).to.equal(
+      Code.expect(nested(space.items.find((r) => r.kind === 'call').steps)).to.equal(
         'leaf:on[.sort:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]], for loop:o1[t.indexOf:o1]');
     });
 
