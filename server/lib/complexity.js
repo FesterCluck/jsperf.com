@@ -35,7 +35,7 @@ const regex = require('./regex');
 const builtins = require('./builtins');
 const table = require('./builtinTable');
 
-const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000, maxInternals: 8 };
+const DEFAULT_LIMITS = { maxCodeLength: 100000, maxSteps: 40000, maxMs: 250, maxDepth: 120, maxCalls: 12, maxPageMs: 1000, maxInternals: 8, maxNesting: 3 };
 
 const REGEX_METHODS = new Set(['test', 'exec', 'match', 'matchAll', 'replace', 'replaceAll', 'search', 'split']);
 
@@ -1364,7 +1364,7 @@ class Analyzer {
           continue;
         }
         for (const { node, mult } of this.listCalls({ body: [stmt] })) {
-          out.push({ name: this.callName(node), cost: mul(mult, safe(() => this.cost(node), UNKNOWN)) });
+          out.push({ name: this.callName(node), cost: mul(mult, safe(() => this.cost(node), UNKNOWN)), node });
         }
       }
 
@@ -1374,19 +1374,41 @@ class Analyzer {
     return body.type === 'BlockStatement' ? this.withScope(statements, collect) : collect();
   }
 
+  // the steps that are calls get their own steps, down to `maxNesting` levels; it runs inside the function whose steps they are
+  expandSteps (steps, depth, seen) {
+    return steps.map((step, i) => {
+      if (!step.node || depth + 1 >= this.limits.maxNesting || i >= this.limits.maxInternals) {
+        return step;
+      }
+
+      return Object.assign({}, step, { inner: safe(() => this.internals(step.node, depth + 1, seen), null) });
+    });
+  }
+
   /**
-   * The steps one top-level call is made of, each with its own class; none when it is a single operation.
+   * The steps one call is made of, each with its own class and, when the step is a call, the steps of that call; none
+   * when it is a single operation. A function is not opened inside itself.
    *
-   * @returns {{steps: Array<{name: string, cls: string}>, more: number}}
+   * @returns {{steps: Array<{name: string, cls: string, steps?: Array, more?: number}>, more: number}}
    */
-  internals (node) {
+  internals (node, depth = 0, seen = new Set()) {
     let steps = this.builtinSteps(node);
     if (steps === null) {
       const user = this.userFunction(node);
-      steps = user ? this.inFunction(user.fn, user.idx, false, node.arguments, () => this.bodySteps(user.fn)) : [];
+      steps = user && !seen.has(user.fn)
+        ? this.inFunction(user.fn, user.idx, false, node.arguments, () => this.expandSteps(this.bodySteps(user.fn), depth, new Set(seen).add(user.fn)))
+        : [];
     }
 
-    const shown = steps.slice(0, this.limits.maxInternals).map(({ name, cost }) => ({ name, cls: classify(cost) }));
+    const shown = steps.slice(0, this.limits.maxInternals).map(({ name, cost, inner }) => {
+      const step = { name, cls: classify(cost) };
+      if (inner && inner.steps.length) {
+        step.steps = inner.steps;
+        step.more = inner.more;
+      }
+
+      return step;
+    });
     return { steps: shown, more: steps.length - shown.length };
   }
 }
@@ -1701,7 +1723,7 @@ const snippet = (code, node) => {
 };
 
 // bump when the rules change: stored estimates with an older version are analyzed again on their next view
-const VERSION = 8;
+const VERSION = 9;
 
 const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 
@@ -1835,12 +1857,13 @@ const present = (value, engine) => {
     return Object.assign({ cls: key }, CLASSES[key]);
   };
   const space = data.space && Array.isArray(data.space.items) ? data.space : null;
-  const stepsOf = (item) => (Array.isArray(item.steps)
-    ? {
-        steps: item.steps.slice(0, DEFAULT_LIMITS.maxInternals).map((s) => Object.assign({ step: String(s.name).slice(0, 40) }, info(s.cls))),
-        moreSteps: Number(item.moreSteps) || 0
-      }
-    : {});
+  // a step that is a call has the steps of that call, as deep as the analysis goes
+  const stepList = (steps, depth) => steps.slice(0, DEFAULT_LIMITS.maxInternals).map((s) => Object.assign(
+    { step: String(s.name).slice(0, 40) },
+    info(s.cls),
+    depth + 1 < DEFAULT_LIMITS.maxNesting && Array.isArray(s.steps) && s.steps.length ? { steps: stepList(s.steps, depth + 1), moreSteps: Number(s.more) || 0 } : {}
+  ));
+  const stepsOf = (item) => (Array.isArray(item.steps) ? { steps: stepList(item.steps, 0), moreSteps: Number(item.moreSteps) || 0 } : {});
   const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item));
   // the last row of a group carries the heavy border; `rows` is how many rows the group's total cell spans
   const rows = (items, extra = 0) => items.map((item, i) => Object.assign(rate(item), { end: i === items.length - 1 && !extra }));
