@@ -1576,6 +1576,47 @@ class SpaceAnalyzer extends Analyzer {
     return added.reduce((acc, arg) => max(acc, this.heldSize(arg)), ZERO);
   }
 
+  // the steps of a function's body, or of a loop's, by what they allocate: the variables it declares (what each ends up
+  // holding), its loops, its calls, and what it hands back; the functions it creates are one step
+  bodySteps (body) {
+    const statements = body.type === 'BlockStatement' ? body.body : [body];
+    const collect = () => {
+      const held = this.heldBy({ body: statements });
+      const out = [];
+      let functions = 0;
+      for (const stmt of statements) {
+        if (stmt.type === 'FunctionDeclaration') {
+          functions++;
+        } else if (stmt.type === 'VariableDeclaration') {
+          for (const { id, init } of stmt.declarations) {
+            if (init && isFn(init)) {
+              functions++;
+              continue;
+            }
+
+            const call = init && (init.type === 'CallExpression' || init.type === 'NewExpression') && id.type === 'Identifier' ? init : null;
+            for (const name of boundNames(id)) {
+              out.push(Object.assign({ name, cost: held.get(name) || ZERO }, call ? { node: call } : {}));
+            }
+          }
+        } else if (/^(For|While|DoWhile)/.test(stmt.type)) {
+          out.push({ name: `${LOOP_NAMES[stmt.type]} loop`, cost: this.cost(stmt), loop: stmt });
+        } else {
+          for (const { node, mult } of this.listCalls({ body: [stmt] })) {
+            out.push({ name: this.callName(node), cost: mul(mult, safe(() => this.cost(node), UNKNOWN)), node });
+          }
+          if (stmt.type === 'ReturnStatement' && stmt.argument && stmt.argument.type === 'Identifier' && !isZero(held.get(stmt.argument.name) || ZERO)) {
+            out.push({ name: `return ${stmt.argument.name}`, cost: held.get(stmt.argument.name) });
+          }
+        }
+      }
+
+      return functions ? [{ name: `${functions} function${functions === 1 ? '' : 's'}`, cost: ZERO }].concat(out) : out;
+    };
+
+    return body.type === 'BlockStatement' ? this.withScope(statements, collect) : collect();
+  }
+
   // listeners run one after the other: what they allocate is not added up
   dispatchCost () {
     return this.listeners.reduce((acc, l) => max(acc, this.costEntry(l)), ZERO);
@@ -1793,7 +1834,7 @@ const snippet = (code, node) => {
 };
 
 // bump when the rules change: stored estimates with an older version are analyzed again on their next view
-const VERSION = 12;
+const VERSION = 13;
 
 const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 

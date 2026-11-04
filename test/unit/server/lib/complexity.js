@@ -1262,7 +1262,7 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(nested(calls[0].steps)).to.equal(
         'leaf:onlogn[.sort:onlogn[copy elements to a work list:on, merge sort the runs:onlogn, write the order back:on]], for loop:on2[t.indexOf:on]');
       Code.expect(nested(space.items.find((r) => r.kind === 'call').steps)).to.equal(
-        'leaf:on[.sort:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]], for loop:o1[t.indexOf:o1]');
+        't:on[.sort:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]], for loop:o1[t.indexOf:o1], return t:on');
     });
 
     lab.test('opens only as many steps as it shows', () => {
@@ -1324,7 +1324,29 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(spaceStepsOf('data.sort(function (a, b) { return a - b; });')).to.equal([['copy elements to a work list:on', 'merge sort the runs:on', 'write the order back:o1']]);
       Code.expect(spaceStepsOf('data.map(function (x) { return x; });')).to.equal([['visit elements:o1', 'callback per element:o1', 'store results:on']]);
       const page = { setup: 'function build(a) { var out = []; for (var i = 0; i < a.length; i++) { out.push(a[i]); } return out.slice(0); }' };
-      Code.expect(spaceStepsOf('build(data);', page)).to.equal([['for loop:on', 'out.slice:on']]);
+      Code.expect(spaceStepsOf('build(data);', page)).to.equal([['out:on', 'for loop:on', 'out.slice:on']]);
+    });
+
+    lab.test('names the steps of memory after what is allocated, and says what is handed back', () => {
+      const steps = (code, p = none) => {
+        const walk = (list) => list.map((s) => `${s.name}:${s.cls}${s.steps ? `[${walk(s.steps)}]` : ''}`).join(', ');
+        return walk(analyzeTest(p, code).space.items.find((r) => r.kind === 'variable').steps || []);
+      };
+      // a variable is a step with what it ends up holding; the loop that fills it, and what is returned, are steps too
+      Code.expect(steps('function f(a) { var table = {}; for (var i = 0; i < a.length; i++) { table[a[i]] = i; } return table; } var r = f(data);')).to.equal('table:on, for loop:on, return table:on');
+      // parameters are inputs and are not listed; a returned name that holds nothing is not a step
+      Code.expect(steps('function f(a) { var n = 0; return n; } var r = f(data);')).to.equal('n:o1');
+      Code.expect(steps('function f(a) { return a; } var r = f(data);')).to.equal('');
+      // functions created inside are one step, and a step that is a call opens
+      Code.expect(steps('function f(a) { function g() {} var h = function () {}; var k = () => 1; var c = a.slice(0); return c; } var r = f(data);')).to.equal('3 functions:o1, c:on, return c:on');
+      Code.expect(steps('function f(a) { function g() {} return a.slice(0); } var r = f(data);')).to.equal('1 function:o1, a.slice:on');
+      Code.expect(steps('function f(a) { var [x, { y }] = a; var c = a.slice(0).sort(); } var r = f(data);')).to.equal('x:o1, y:o1, c:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]');
+      // a declaration without a value, a constructor call, a bare return, and a return of something that is not a name
+      Code.expect(steps('function f(a) { var x; var m = new Map(a); return; } var r = f(data);')).to.equal('x:o1, m:on');
+      Code.expect(steps('function f(a) { var x = 1; return x + a.length; } var r = f(data);')).to.equal('x:o1');
+      // a loop with a single statement for a body, and an arrow function that is its own body
+      Code.expect(steps('function f(a) { var i = 0; while (i < a.length) i++; } var r = f(data);')).to.equal('i:o1, while loop:o1');
+      Code.expect(steps('var f = (a) => a.slice(0); var r = f(data);')).to.equal('a.slice:on');
     });
 
     lab.test('is carried to the page by present(), capped and cleaned', () => {

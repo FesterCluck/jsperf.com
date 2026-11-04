@@ -782,6 +782,21 @@ applet {
 .bigo-graph .space-icon { width: 12px; height: 12px; margin-right: 4px; }
 .complexity-total .bigo-graph .space-icon { width: 14px; height: 14px; }
 
+/* the checkbox before the table hides every breakdown, nested steps included */
+#show-breakdown {
+  margin: .4em .4em .4em 0;
+}
+
+#breakdown-toggle {
+  font-size: .9em;
+  cursor: pointer;
+}
+
+#show-breakdown:not(:checked) ~ #test-table .bigo-then,
+#show-breakdown:not(:checked) ~ #test-table .bigo-steps {
+  display: none;
+}
+
 /* a step that is a call opens to show the steps of that call, one level further in */
 .bigo-expandable summary {
   display: flex;
