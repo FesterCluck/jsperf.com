@@ -543,6 +543,41 @@ applet {
 }
 
 /* Big O complexity estimates (see server/lib/complexity.js) */
+.complexity-heading th {
+	background: #dde5ec;
+	font-size: .8em;
+	font-weight: bold;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	text-align: left;
+	color: #3b4651;
+	padding: .35em .7em;
+	border-bottom: 1px solid #b5c2ce;
+}
+
+.complexity-heading th small {
+	font-weight: normal;
+	letter-spacing: 0;
+	text-transform: none;
+	color: #5a6a78;
+	margin-left: .6em;
+}
+
+.complexity-tag {
+	display: inline-block;
+	margin-left: .4em;
+	padding: 0 .4em;
+	border: 1px solid #a9b7c3;
+	border-radius: 3px;
+	font-size: .75em;
+	color: #4a5a68;
+	background: #eef2f6;
+}
+
+.space-row.space-variable th, .space-row.space-variable td {
+	border-top: 1px dotted #b5c2ce;
+}
+
 .complexity-row th {
 	background: #cfd9e2;
 	font-size: .88em;

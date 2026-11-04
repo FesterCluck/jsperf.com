@@ -165,15 +165,18 @@ lab.experiment('web/test plugin', function () {
       // result rows are still addressable by id and come first in each pair
       Code.expect($('#title-1').length).to.equal(1);
       Code.expect($('#results-2').text()).to.equal('pending…');
-      // every call of a test has a row of its own, then a row for the calls that were left out
+      // a heading names the group, every call of a test has a row of its own, then a row for the calls that were left out
       const rows = $('#test-table tbody tr');
-      Code.expect(rows.length).to.equal(7);
+      Code.expect(rows.length).to.equal(9);
       Code.expect(rows.eq(0).find('#results-1').length).to.equal(1);
-      Code.expect(rows.eq(1).hasClass('complexity-row')).to.be.true();
-      Code.expect(rows.eq(5).find('#results-2').length).to.equal(1);
-      Code.expect(rows.eq(6).hasClass('complexity-row')).to.be.true();
+      Code.expect(rows.eq(1).hasClass('complexity-heading')).to.be.true();
+      Code.expect(rows.eq(1).find('th').text()).to.startWith('Time');
+      Code.expect(rows.eq(2).hasClass('complexity-row')).to.be.true();
+      Code.expect(rows.eq(6).find('#results-2').length).to.equal(1);
+      Code.expect(rows.eq(7).find('th').text()).to.startWith('Time');
+      Code.expect(rows.eq(8).hasClass('complexity-row')).to.be.true();
 
-      const group = rows.slice(1, 5);
+      const group = rows.slice(2, 6);
       Code.expect(group.find('th').map((i, el) => $(el).text().trim()).get()).to.equal(['build(shared)', 'find(x)', 'weird(x)', '+3 more']);
       Code.expect(group.find('td.complexity-breakdown .bigo-graph').map((i, el) => $(el).attr('class')).get()).to.equal(['bigo-graph bigo-on', 'bigo-graph bigo-ologn', 'bigo-graph bigo-unknown']);
       Code.expect(group.find('td.complexity-breakdown use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-ologn', '#curve-unknown']);
@@ -181,10 +184,10 @@ lab.experiment('web/test plugin', function () {
       Code.expect(group.find('td.complexity-total').attr('rowspan')).to.equal('4');
       Code.expect(group.find('td.complexity-total .bigo-graph').hasClass('bigo-on')).to.be.true();
       Code.expect(group.filter('.complexity-end').length).to.equal(1);
-      Code.expect(rows.eq(4).hasClass('complexity-end')).to.be.true();
+      Code.expect(rows.eq(5).hasClass('complexity-end')).to.be.true();
       Code.expect(group.filter('.complexity-unknown').length).to.equal(0);
 
-      Code.expect(rows.eq(6).find('th').text()).to.include('no function calls');
+      Code.expect(rows.eq(8).find('th').text()).to.include('no function calls');
     });
 
     lab.test('continues each call with the steps it is made of, small charts with their names below', async function () {
@@ -194,7 +197,7 @@ lab.experiment('web/test plugin', function () {
           { code: 'data.sort()', cls: 'onlogn', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'onlogn' }, { name: 'back', cls: 'on' }], moreSteps: 2 },
           { code: 'x.push(1)', cls: 'o1' }
         ],
-        space: { overall: 'on', items: [{ code: 'data.sort()', cls: 'on', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'on' }] }, { code: 'out', cls: 'on' }] }
+        space: { overall: 'on', items: [{ code: 'data.sort()', cls: 'on', steps: [{ name: 'copy', cls: 'on' }, { name: 'merge', cls: 'on' }] }], variables: [{ code: 'out', cls: 'on' }] }
       };
       pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'data.sort()', defer: 'n', complexity }], [], []]));
 
@@ -219,6 +222,17 @@ lab.experiment('web/test plugin', function () {
       Code.expect(space.find('.bigo-mini').first().hasClass('space-graph')).to.be.true();
       Code.expect(rows.eq(2).find('td.complexity-total').attr('rowspan')).to.equal('2');
       Code.expect(rows.eq(3).hasClass('complexity-end')).to.be.true();
+
+      // the memory rows have a heading of their own, and the variable among them says so
+      const headings = $('tr.complexity-heading th').map((i, el) => $(el).text()).get();
+      Code.expect(headings.length).to.equal(2);
+      Code.expect(headings[0]).to.startWith('Time');
+      Code.expect(headings[1]).to.startWith('Extra memory');
+      Code.expect(headings[1]).to.include('beyond the inputs');
+      Code.expect(rows.eq(2).find('.complexity-tag').length).to.equal(0);
+      Code.expect(rows.eq(3).find('.complexity-tag').text()).to.equal('variable');
+      Code.expect(rows.eq(3).hasClass('space-variable')).to.be.true();
+      Code.expect(rows.eq(3).find('th code').text()).to.equal('out');
 
       // the new chart classes have curves in the sprite
       Code.expect($('#curve-ologn2, #curve-onlogn2, #curve-oexp').length).to.equal(3);

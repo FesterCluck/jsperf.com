@@ -175,6 +175,9 @@
           <td id="results-{{inc @index}}" class="results">pending…</td>
         </tr>
         {{#with complexityView}}
+          <tr class="complexity-heading">
+            <th scope="colgroup" colspan="3">Time <small>how the work grows with the size of the input, one row per call</small></th>
+          </tr>
           {{#each calls}}
             <tr class="complexity-row{{#if end}} complexity-end{{/if}}{{#if ../unknown}} complexity-unknown{{/if}}">
               <th scope="row"><code>{{code}}</code></th>
@@ -206,9 +209,12 @@
             </tr>
           {{/if}}
           {{#with space}}
+            <tr class="complexity-heading">
+              <th scope="colgroup" colspan="3">Extra memory <small>the most held at once beyond the inputs: what each call builds, then the variables that keep growing</small></th>
+            </tr>
             {{#each items}}
-              <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}">
-                <th scope="row">{{#if code}}<code>{{code}}</code>{{/if}}</th>
+              <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}{{#if variable}} space-variable{{/if}}">
+                <th scope="row">{{#if code}}<code>{{code}}</code>{{/if}}{{#if variable}} <small class="complexity-tag">variable</small>{{/if}}</th>
                 <td class="complexity-breakdown">
                   <div class="bigo-line">
                     <span class="bigo-graph space-graph bigo-{{cls}}" title="{{label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>

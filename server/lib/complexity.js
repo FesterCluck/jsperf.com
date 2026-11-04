@@ -1455,7 +1455,7 @@ const rootName = (expr) => {
 class SpaceAnalyzer extends Analyzer {
   constructor (limits) {
     super(limits);
-    this.grown = new Set(); // names of collections that grow in the current loop body / function
+    this.grown = new Map(); // name -> what each growth step adds, for the collections that grow in the current loop body / function
     this.retained = []; // { cost, names } of the growing loops completed inside the current loop body / function
     this.field = 2;
   }
@@ -1513,6 +1513,39 @@ class SpaceAnalyzer extends Analyzer {
     return (concat || spread || append) ? left.name : null;
   }
 
+  // what a value keeps once it is stored: a number or a reference to something that exists already is one slot, a fresh
+  // collection or string is as big as it was made
+  heldSize (expr) {
+    if (expr.type === 'SpreadElement') {
+      return this.sizeCost(expr.argument);
+    }
+
+    const { b } = this;
+    let fresh = expr.type === 'ArrayExpression' || expr.type === 'ObjectExpression' || expr.type === 'NewExpression';
+    if (expr.type === 'CallExpression') {
+      const member = expr.callee.type === 'MemberExpression';
+      const name = member ? memberName(expr.callee) : null;
+      const owner = member && expr.callee.object.type === 'Identifier' ? expr.callee.object.name : null;
+      const statics = owner === null ? null : b.N_STATICS.get(owner);
+      // a function of the page is assumed to hand back what it built
+      fresh = Boolean(this.userFunction(expr)) || (member && (b.ALLOC_METHODS.has(name) || b.ALLOC_CALLBACK_METHODS.has(name) || b.ARG_SIZED.has(name) || Boolean(statics && statics.has(name))));
+    }
+
+    return fresh ? this.cost(expr) : ZERO;
+  }
+
+  // how much one step of growth adds to the collection `growthTarget` names: what is pushed, set, added or written
+  growthSlot (node) {
+    if (node.type === 'AssignmentExpression') {
+      // `a = a.concat(x)` and `a = [...a, x]` rebuild what is already held: the growth is the one new slot
+      return node.left.type === 'Identifier' && node.operator === '=' ? ZERO : this.heldSize(node.right);
+    }
+
+    const name = memberName(node.callee);
+    const added = name === 'set' ? node.arguments.slice(1, 2) : (name === 'splice' ? node.arguments.slice(2) : (['push', 'unshift', 'add'].includes(name) ? node.arguments : []));
+    return added.reduce((acc, arg) => max(acc, this.heldSize(arg)), ZERO);
+  }
+
   // listeners run one after the other: what they allocate is not added up
   dispatchCost () {
     return this.listeners.reduce((acc, l) => max(acc, this.costEntry(l)), ZERO);
@@ -1568,7 +1601,7 @@ class SpaceAnalyzer extends Analyzer {
   costFunction (fn, idx, inline = false, args = []) {
     const grown = this.grown;
     const retained = this.retained;
-    this.grown = new Set();
+    this.grown = new Map();
     this.retained = [];
     try {
       return super.costFunction(fn, idx, inline, args);
@@ -1576,12 +1609,12 @@ class SpaceAnalyzer extends Analyzer {
       // growing a collection the function did not create is visible to the caller's loop
       const own = declaredNames(fn.body);
       const params = fn.params.map((p) => (p.type === 'Identifier' ? p.name : null));
-      this.grown.forEach((name) => {
+      this.grown.forEach((slot, name) => {
         const at = params.indexOf(name);
         if (at >= 0 && args[at]) {
-          grown.add(rootName(args[at])); // growing a parameter grows whatever was passed in
+          this.noteGrowth(grown, rootName(args[at]), slot); // growing a parameter grows whatever was passed in
         } else if (!own.has(name)) {
-          grown.add(name);
+          this.noteGrowth(grown, name, slot);
         }
       });
       this.grown = grown;
@@ -1608,7 +1641,7 @@ class SpaceAnalyzer extends Analyzer {
       default: {
         const target = this.growthTarget(node);
         if (target !== null) {
-          this.grown.add(target);
+          this.noteGrowth(this.grown, target, this.growthSlot(node));
         }
 
         return super.costNode(node);
@@ -1616,9 +1649,14 @@ class SpaceAnalyzer extends Analyzer {
     }
   }
 
+  // a collection that grows in several places grows by the biggest of them
+  noteGrowth (grown, name, slot) {
+    grown.set(name, grown.has(name) ? max(grown.get(name), slot) : slot);
+  }
+
   spaceLoop (node, parts) {
     const outer = { grown: this.grown, retained: this.retained };
-    this.grown = new Set();
+    this.grown = new Map();
     this.retained = [];
     let body;
     let grown;
@@ -1637,8 +1675,10 @@ class SpaceAnalyzer extends Analyzer {
     const kept = (names) => new Set([...names].filter((name) => !own.has(name)));
     const trip = this.loopTrip(node);
     const found = [];
-    if (kept(grown).size > 0) {
-      found.push({ cost: trip, names: kept(grown) });
+    for (const [name, slot] of grown) {
+      if (!own.has(name)) {
+        found.push({ cost: mul(trip, slot), names: new Set([name]) });
+      }
     }
 
     for (const r of inner) {
@@ -1672,7 +1712,7 @@ class SpaceAnalyzer extends Analyzer {
 
       const target = this.growthTarget(node);
       if (target !== null && target !== '?' && target !== 'this') {
-        note(target, mult);
+        note(target, mul(mult, this.growthSlot(node)));
       }
 
       let inner = mult;
@@ -1723,7 +1763,7 @@ const snippet = (code, node) => {
 };
 
 // bump when the rules change: stored estimates with an older version are analyzed again on their next view
-const VERSION = 9;
+const VERSION = 10;
 
 const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 
@@ -1810,7 +1850,7 @@ const analyzeSpace = (program, code, calls, pageCode, limits) => {
   const items = calls.slice(0, limits.maxCalls).map(({ node, mult }) => {
     const cost = safe(() => analyzer.cost(node), UNKNOWN);
     // a call that grows a collection keeps one more element per iteration of the loops around it
-    return { code: snippet(code, node), cls: classify(cost === UNKNOWN ? UNKNOWN : (safe(() => analyzer.growthTarget(node), null) === null ? cost : max(cost, mult))) };
+    return { code: snippet(code, node), cls: classify(cost === UNKNOWN ? UNKNOWN : (safe(() => analyzer.growthTarget(node), null) === null ? cost : max(cost, mul(mult, safe(() => analyzer.growthSlot(node), ZERO))))) };
   });
 
   withInternals(analyzer, calls, items, limits);
@@ -1864,13 +1904,13 @@ const present = (value, engine) => {
     depth + 1 < DEFAULT_LIMITS.maxNesting && Array.isArray(s.steps) && s.steps.length ? { steps: stepList(s.steps, depth + 1), moreSteps: Number(s.more) || 0 } : {}
   ));
   const stepsOf = (item) => (Array.isArray(item.steps) ? { steps: stepList(item.steps, 0), moreSteps: Number(item.moreSteps) || 0 } : {});
-  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item));
+  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item), item.variable ? { variable: true } : {});
   // the last row of a group carries the heavy border; `rows` is how many rows the group's total cell spans
   const rows = (items, extra = 0) => items.map((item, i) => Object.assign(rate(item), { end: i === items.length - 1 && !extra }));
   return {
     space: space && {
       overall: info(space.overall),
-      items: rows(space.items.concat(Array.isArray(space.variables) ? space.variables : [])),
+      items: rows(space.items.concat((Array.isArray(space.variables) ? space.variables : []).map((v) => Object.assign({ variable: true }, v)))),
       rows: Math.max(1, space.items.length + (Array.isArray(space.variables) ? space.variables.length : 0))
     },
     overall: info(data.overall),
