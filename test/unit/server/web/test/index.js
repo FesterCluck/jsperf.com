@@ -182,7 +182,7 @@ lab.experiment('web/test plugin', function () {
       Code.expect(rows.eq(8).hasClass('complexity-row')).to.be.true();
 
       const group = rows.slice(2, 6);
-      Code.expect(group.find('th').map((i, el) => $(el).text().trim()).get()).to.equal(['build(shared)', 'find(x)', 'weird(x)', '+3 more']);
+      Code.expect(group.find('th').map((i, el) => $(el).text().trim()).get()).to.equal(['build(\n\tshared\n)', 'find(\n\tx\n)', 'weird(\n\tx\n)', '+3 more']);
       Code.expect(group.find('td.complexity-breakdown .bigo-graph').map((i, el) => $(el).attr('class')).get()).to.equal(['bigo-graph bigo-on', 'bigo-graph bigo-ologn', 'bigo-graph bigo-unknown']);
       Code.expect(group.find('td.complexity-breakdown use').map((i, el) => $(el).attr('href')).get()).to.equal(['#curve-on', '#curve-ologn', '#curve-unknown']);
       Code.expect(group.find('td.complexity-total').length).to.equal(1);

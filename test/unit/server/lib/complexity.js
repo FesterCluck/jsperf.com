@@ -692,7 +692,7 @@ lab.experiment('complexity analyzer', () => {
     lab.test('decorates a stored result for the template', () => {
       const view = present({ estimate: true, overall: 'onlogn', calls: [{ code: 'f(x)', cls: 'o1' }], more: 2 });
       Code.expect(view.overall).to.include({ cls: 'onlogn', label: 'O(n log n)', curve: 'curve-onlogn' });
-      Code.expect(view.calls[0]).to.include({ code: 'f(x)', cls: 'o1', label: 'O(1)', curve: 'curve-o1' });
+      Code.expect(view.calls[0]).to.include({ code: 'f(\n\tx\n)', cls: 'o1', label: 'O(1)', curve: 'curve-o1' });
       Code.expect(view.more).to.equal(2);
       Code.expect(view.unknown).to.be.false();
     });
@@ -1099,7 +1099,8 @@ lab.experiment('complexity analyzer', () => {
       // loops of every kind, with their header; a do-while is written the other way round
       Code.expect(rows('var i = 0; do { i++; } while (i < data.length); while (i--) {} for (var k in data) {} for (var v of data) {}')).to.equal([
         'variable:i:o1', 'loop:do … while (i < data.length):o1', 'loop:while (i--):o1', 'loop:for (var k in data):o1', 'loop:for (var v of data):o1']);
-      Code.expect(rows('for (var thisIsAVeryLongVariableName = 0; thisIsAVeryLongVariableName < data.length * data.length + data.length; thisIsAVeryLongVariableName++) {}')[0]).to.match(/^loop:for \(var thisIsAVeryLongVariableName = 0; .{20,}\.\.\.:o1$/);
+      const long = 'someVeryLongVariableName';
+      Code.expect(rows(`for (var ${long} = 0; ${long} < data.length * data.length + data.length + data.length + data.length + data.length + data.length + data.length; ${long}++) {}`)[0]).to.match(/^loop:for \(var someVeryLongVariableName = 0; .{100,}\.\.\.:o1$/);
       // calls outside of declarations and loops
       Code.expect(rows('if (data.length) { data.slice(); } sink = data.map(function (x) { return x; });')).to.equal(['call:data.slice():on', 'call:data.map(function (x) { return x; }):on']);
       // only as many rows as fit
@@ -1114,6 +1115,29 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(items[0].steps.map((s) => s.name)).to.equal(['copy elements to a work list', 'merge sort the runs', 'write the order back']);
       Code.expect(items[1].steps).to.be.undefined();
       Code.expect(items[2].steps.map((s) => `${s.name}:${s.cls}`)).to.equal(['data.indexOf:o1']);
+    });
+
+    lab.test('is laid out for reading when presented: one argument to a line, one clause to a line', () => {
+      const laid = (code) => present({ overall: 'o1', calls: [{ code, cls: 'o1' }] }).calls[0].code;
+      Code.expect(laid('copperKettle(sharedData)')).to.equal('copperKettle(\n\tsharedData\n)');
+      Code.expect(laid('velvetHammer(lookup, targetKeys[k])')).to.equal('velvetHammer(\n\tlookup,\n\ttargetKeys[k]\n)');
+      // the call that closes the text is the one laid out; commas inside brackets, braces, calls and strings do not split
+      Code.expect(laid('data.slice(0).sort(function (a, b) { return a - b; })')).to.equal('data.slice(0).sort(\n\tfunction (a, b) { return a - b; }\n)');
+      Code.expect(laid('out.set("a,b", [1, 2], { x: f(1, 2) }, \'it\\\'s, ok\', `t,x`)')).to.equal('out.set(\n\t"a,b",\n\t[1, 2],\n\t{ x: f(1, 2) },\n\t\'it\\\'s, ok\',\n\t`t,x`\n)');
+      Code.expect(laid('new Map(a, b)')).to.equal('new Map(\n\ta,\n\tb\n)');
+      // loops: a for loop one clause to a line, the others as one
+      Code.expect(laid('for (var k = 0; k < targetKeys.length; k++)')).to.equal('for (\n\tvar k = 0;\n\tk < targetKeys.length;\n\tk++\n)');
+      Code.expect(laid('for (var k in data)')).to.equal('for (\n\tvar k in data\n)');
+      Code.expect(laid('while (i--)')).to.equal('while (\n\ti--\n)');
+      Code.expect(laid('do … while (i < data.length)')).to.equal('do … while (\n\ti < data.length\n)');
+      // nothing to lay out: no arguments, no clauses, no parentheses, a group that does not close the text, one that was cut short
+      Code.expect(laid('foo()')).to.equal('foo()');
+      Code.expect(laid('for (;;)')).to.equal('for (;;)');
+      Code.expect(laid('lookup')).to.equal('lookup');
+      Code.expect(laid('3 functions')).to.equal('3 functions');
+      Code.expect(laid('a(b).c')).to.equal('a(b).c');
+      Code.expect(laid('for (var i = 0; i < data....')).to.equal('for (var i = 0; i < data....');
+      Code.expect(laid(')(')).to.equal(')(');
     });
 
     lab.test('calls and variables are rated', () => {
@@ -1177,7 +1201,7 @@ lab.experiment('complexity analyzer', () => {
     lab.test('is presented with the call ratings', () => {
       const shown = present(analyzeTest(page, 'var out = []; for (var i = 0; i < data.length; i++) { out.push(i); }'));
       Code.expect(shown.space.overall.cls).to.equal('on');
-      Code.expect(shown.space.items.map((v) => v.code)).to.equal(['out', 'for (var i = 0; i < data.length; i++)']);
+      Code.expect(shown.space.items.map((v) => v.code)).to.equal(['out', 'for (\n\tvar i = 0;\n\ti < data.length;\n\ti++\n)']);
       Code.expect(shown.space.items.map((v) => v.tag)).to.equal(['variable', 'loop']);
       Code.expect(shown.space.items.map((v) => Boolean(v.perPass))).to.equal([false, true]);
       Code.expect(present({ overall: 'o1', calls: [] }).space).to.be.null();

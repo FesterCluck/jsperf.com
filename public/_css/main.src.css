@@ -620,6 +620,7 @@ applet {
 .complexity-row th code {
 	white-space: pre-wrap;
 	word-break: break-word;
+	tab-size: 2;
 }
 
 .complexity-row td.complexity-total small.complexity-note {

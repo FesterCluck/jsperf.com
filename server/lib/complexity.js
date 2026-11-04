@@ -1932,7 +1932,7 @@ const withSteps = (row, steps) => {
 // the text of a loop up to its body: `for (var k = 0; k < n; k++)`
 const loopHeader = (code, stmt) => {
   const text = (stmt.type === 'DoWhileStatement' ? `do … while (${code.slice(stmt.test.start, stmt.test.end)})` : code.slice(stmt.start, stmt.body.start)).replace(/\s+/g, ' ').trim();
-  return text.length > 80 ? text.slice(0, 77) + '...' : text;
+  return text.length > 200 ? text.slice(0, 197) + '...' : text;
 };
 
 // one row for each place the test body allocates, in the order it appears: the variables it declares, its loops, its calls
@@ -2007,6 +2007,76 @@ const analyzeOne = (code, pageCode, limits) => {
 
 const analyzeTest = (page, code, options) => analyzePage(page, [{ code }], options)[0];
 
+// the last group of parentheses of a snippet, as [open, close] indexes, when it is the one that closes the snippet
+const lastGroup = (text) => {
+  const opens = [];
+  let found = null;
+  let quote = null;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\') {
+        i++;
+      } else if (ch === quote) {
+        quote = null;
+      }
+    } else if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+    } else if (ch === '(') {
+      opens.push(i);
+    } else if (ch === ')' && opens.length) {
+      const open = opens.pop();
+      found = opens.length === 0 ? [open, i] : found;
+    }
+  }
+
+  return found && found[1] === text.length - 1 ? found : null;
+};
+
+// the pieces of `text` between the separators that are not inside brackets, braces, parentheses or strings
+const splitTop = (text, separator) => {
+  const pieces = [];
+  let depth = 0;
+  let quote = null;
+  let from = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\') {
+        i++;
+      } else if (ch === quote) {
+        quote = null;
+      }
+    } else if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+    } else if ('([{'.includes(ch)) {
+      depth++;
+    } else if (')]}'.includes(ch)) {
+      depth--;
+    } else if (ch === separator && depth === 0) {
+      pieces.push(text.slice(from, i));
+      from = i + 1;
+    }
+  }
+
+  pieces.push(text.slice(from));
+  return pieces.map((piece) => piece.trim()).filter(Boolean);
+};
+
+// a call or a loop header laid out for reading: a break after the opening parenthesis, one argument (or, in a for loop,
+// one clause) to a line, indented, and the closing parenthesis on its own line; text that has no such group is as it was
+const layout = (text) => {
+  const group = lastGroup(text);
+  if (!group) {
+    return text;
+  }
+
+  const head = text.slice(0, group[0]);
+  const separator = /^for\s*$/.test(head) ? ';' : ',';
+  const pieces = splitTop(text.slice(group[0] + 1, group[1]), separator);
+  return pieces.length ? `${head}(\n${pieces.map((piece, i) => `\t${piece}${i < pieces.length - 1 ? separator : ''}`).join('\n')}\n)` : text;
+};
+
 /**
  * Normalises a stored value (JSON column, JSON string or garbage) for the template.
  *
@@ -2032,7 +2102,7 @@ const present = (value, engine) => {
     s.perPass ? { perPass: true } : {}
   ));
   const stepsOf = (item) => (Array.isArray(item.steps) ? { steps: stepList(item.steps, 0), moreSteps: Number(item.moreSteps) || 0 } : {});
-  const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item), Object.hasOwn(TAGS, item.kind) ? { tag: TAGS[item.kind] } : {}, item.perPass ? { perPass: true } : {});
+  const rate = (item) => Object.assign({ code: layout(String(item.code)) }, info(item.cls), stepsOf(item), Object.hasOwn(TAGS, item.kind) ? { tag: TAGS[item.kind] } : {}, item.perPass ? { perPass: true } : {});
   // the last row of a group carries the heavy border; `rows` is how many rows the group's total cell spans
   const rows = (items, extra = 0) => items.map((item, i) => Object.assign(rate(item), { end: i === items.length - 1 && !extra }));
   return {
