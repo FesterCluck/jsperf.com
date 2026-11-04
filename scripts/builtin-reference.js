@@ -7,9 +7,11 @@
 //       spec.html of a checkout of github.com/tc39/ecma262) and test/fixtures/builtin-names.json (those plus every
 //       function and accessor of the running engine, which is what the unit tests require the table to cover)
 //
-//   node scripts/builtin-reference.js verify <v8-checkout>
+//   node scripts/builtin-reference.js verify <v8-checkout> [<chromium-src-checkout>]
 //       checks that every V8 reference of the table (file#symbol) exists in a checkout of github.com/v8/v8 (the table
-//       was written against tag 12.4.254.21, the V8 of Node 22 LTS), and prints where each row's class comes from
+//       was written against tag 12.4.254.21, the V8 of Node 22 LTS), and every Blink reference in the Chromium source
+//       (tag 154.0.8037.154; only third_party/blink/renderer needs to be there), and prints where each row's class
+//       comes from
 
 const fs = require('fs');
 const path = require('path');
@@ -110,36 +112,43 @@ const generate = (specDir) => {
   console.log(`${clauses.length} spec clauses, ${covered.length} names (${process.version}, V8 ${process.versions.v8})`);
 };
 
-const verify = (v8Dir) => {
+const problemsOf = (row, ref, dir) => {
+  const [file, symbol] = ref.split('#');
+  const full = path.join(dir, file);
+  if (!fs.existsSync(full)) {
+    return [`${row.key}: ${file} does not exist`];
+  }
+
+  return fs.readFileSync(full, 'utf8').includes(symbol) ? [] : [`${row.key}: ${symbol} is not in ${file}`];
+};
+
+const verify = (v8Dir, blinkDir) => {
   const sections = new Set(JSON.parse(fs.readFileSync(path.join(fixtures, 'spec-sections.json'), 'utf8')));
-  const counts = { v8: 0, spec: 0, est: 0 };
+  const counts = { v8: 0, spec: 0, blink: 0, est: 0 };
   const problems = [];
   for (const row of table.rows) {
     if (row.ref) {
-      const [file, symbol] = row.ref.split('#');
-      const full = path.join(v8Dir, file);
-      if (!fs.existsSync(full)) {
-        problems.push(`${row.key}: ${file} does not exist`);
-      } else if (!fs.readFileSync(full, 'utf8').includes(symbol)) {
-        problems.push(`${row.key}: ${symbol} is not in ${file}`);
-      }
+      problems.push(...problemsOf(row, row.ref, v8Dir));
+    }
+    if (row.blink && blinkDir) {
+      problems.push(...problemsOf(row, row.blink, blinkDir));
     }
 
-    const source = row.est ? 'est' : (row.ref ? 'v8' : (hasSection(row, sections) ? 'spec' : 'est'));
+    const source = row.est ? 'est' : (row.ref ? 'v8' : (hasSection(row, sections) ? 'spec' : (row.blink ? 'blink' : 'est')));
     counts[source]++;
   }
 
-  console.log(`${table.rows.length} rows: ${counts.v8} with a V8 reference, ${counts.spec} read off the spec, ${counts.est} estimates`);
+  console.log(`${table.rows.length} rows: ${counts.v8} with a V8 reference, ${counts.spec} read off the spec, ${counts.blink} with a Blink reference, ${counts.est} estimates`);
   problems.forEach((p) => console.log(`PROBLEM ${p}`));
   process.exitCode = problems.length ? 1 : 0;
 };
 
 if (require.main === module) {
-  const [command, dir] = process.argv.slice(2);
+  const [command, dir, blinkDir] = process.argv.slice(2);
   if (!dir || !['generate', 'verify'].includes(command)) {
-    console.log('usage: node scripts/builtin-reference.js generate <ecma262-dir> | verify <v8-dir>');
+    console.log('usage: node scripts/builtin-reference.js generate <ecma262-dir> | verify <v8-dir> [<chromium-dir>]');
     process.exitCode = 2;
   } else {
-    (command === 'generate' ? generate : verify)(dir);
+    (command === 'generate' ? generate : verify)(dir, blinkDir);
   }
 }

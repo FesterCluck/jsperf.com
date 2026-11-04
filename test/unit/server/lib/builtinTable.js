@@ -11,8 +11,8 @@ const lab = exports.lab = Lab.script();
 
 const fixture = (name) => JSON.parse(Fs.readFileSync(Path.join(__dirname, '../../../fixtures', name), 'utf8'));
 
-const TIME = /^(1|log|n|nlogn|arg|sized|subtree|markup|unknown|cb)(\*cb)?$/;
-const SPACE = /^(1|log|n|arg|sized|subtree|markup|cb|unknown)$/;
+const TIME = /^(1|log|n|nlogn|arg|sized|subtree|markup|tree|unknown|cb)(\*cb)?$/;
+const SPACE = /^(1|log|n|arg|sized|subtree|markup|tree|cb|unknown)$/;
 
 lab.experiment('built-in table', () => {
   lab.test('has exactly one row per built-in', () => {
@@ -26,9 +26,9 @@ lab.experiment('built-in table', () => {
     Code.expect(missing).to.equal([]);
   });
 
-  lab.test('every row says where its class comes from: a V8 reference, a spec section or an estimate', () => {
+  lab.test('every row says where its class comes from: a V8 reference, a spec section, a Blink reference or an estimate', () => {
     const sections = new Set(fixture('spec-sections.json'));
-    const unsourced = table.rows.filter((r) => !r.est && !r.ref && !hasSection(r, sections)).map((r) => r.key);
+    const unsourced = table.rows.filter((r) => !r.est && !r.ref && !r.blink && !hasSection(r, sections)).map((r) => r.key);
     Code.expect(unsourced).to.equal([]);
   });
 
@@ -43,8 +43,8 @@ lab.experiment('built-in table', () => {
           Code.expect(space, row.key).to.match(SPACE);
         }
       }
-      if (row.ref) {
-        Code.expect(row.ref, row.key).to.match(/^(src|third_party)\/[\w/.-]+#\w+$/);
+      for (const ref of [row.ref, row.blink].filter(Boolean)) {
+        Code.expect(ref, row.key).to.match(/^(src|third_party)\/[\w/.-]+#\w+$/);
       }
     }
   });
@@ -83,6 +83,11 @@ lab.experiment('built-in profiles', () => {
     Code.expect(builtins.profile()).to.shallow.equal(spec);
   });
 
+  lab.test('names no DOM method after a JavaScript method, which would be costed as the DOM one', () => {
+    const js = new Set(table.rows.filter((r) => r.kind === 'method' || r.kind === 'static').map((r) => r.name));
+    Code.expect(table.rows.filter((r) => r.kind === 'dom' && js.has(r.name)).map((r) => r.name)).to.equal([]);
+  });
+
   lab.test('derives the sets the analyzer reads', () => {
     const { spec } = builtins;
     Code.expect(spec.SORT_METHODS.has('sort')).to.be.true();
@@ -102,9 +107,10 @@ lab.experiment('built-in profiles', () => {
     Code.expect(spec.N_GLOBAL_FUNCTIONS.has('encodeURIComponent')).to.be.true();
     Code.expect(spec.SIZED_CONSTRUCTORS.has('Map')).to.be.true();
     Code.expect(spec.O1_CONSTRUCTORS.has('Date')).to.be.true();
-    Code.expect(spec.DOM_SUBTREE_METHODS.has('appendChild')).to.be.true();
-    Code.expect(spec.DOM_MARKUP_METHODS.has('insertAdjacentHTML')).to.be.true();
-    Code.expect(spec.DOM_O1_METHODS.has('createElement')).to.be.true();
+    Code.expect(spec.DOM.get('appendChild')).to.equal('subtree');
+    Code.expect(spec.DOM.get('insertAdjacentHTML')).to.equal('markup');
+    Code.expect(spec.DOM.get('createElement')).to.equal('1');
+    Code.expect(spec.DOM.get('querySelectorAll')).to.equal('tree');
   });
 
   lab.test('does not treat accessors or unknown cost as callable constant time methods', () => {

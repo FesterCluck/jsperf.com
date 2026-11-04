@@ -1032,17 +1032,47 @@ class Analyzer {
     return (created(arg) || (init && created(init) && !this.domParents.has(arg.name))) ? ZERO : LINEAR;
   }
 
+  // the size a DOM method's steps are in: the nodes it moves, the markup it parses, the value it serializes, or the tree
+  domSize (row, node) {
+    const [first, second] = node.arguments;
+    switch (row.spec.time) {
+      case 'markup':
+        return second ? this.sizeCost(second) : ZERO;
+      case 'tree':
+        return this.isIdSelector(first) ? ZERO : LINEAR;
+      case 'n':
+        return first ? this.sizeCost(first) : ZERO;
+      case 'log':
+        return LOG;
+      default:
+        return this.subtreeCost(first);
+    }
+  }
+
+  // is the selector a literal `#id`, which the browser answers with a hash lookup
+  isIdSelector (arg) {
+    return Boolean(arg) && arg.type === 'Literal' && typeof arg.value === 'string' && /^#[\w-]+$/.test(arg.value);
+  }
+
   // DOM methods; undefined when `name` is not one
   domMethod (name, recv, node) {
     const { b } = this;
-    if (b.DOM_O1_METHODS.has(name)) {
-      return recv;
+    switch (b.DOM.get(name)) {
+      case '1':
+        return recv;
+      case 'subtree':
+        return max(recv, this.subtreeCost(node.arguments[0]));
+      case 'markup':
+        return max(recv, node.arguments[1] ? this.sizeCost(node.arguments[1]) : ZERO);
+      case 'tree':
+        return max(recv, this.isIdSelector(node.arguments[0]) ? ZERO : LINEAR);
+      case 'log':
+        return max(recv, LOG);
+      case 'n':
+        return max(recv, node.arguments[0] ? this.sizeCost(node.arguments[0]) : ZERO);
+      default:
+        return undefined;
     }
-    if (b.DOM_SUBTREE_METHODS.has(name)) {
-      return max(recv, this.subtreeCost(node.arguments[0]));
-    }
-
-    return b.DOM_MARKUP_METHODS.has(name) ? max(recv, node.arguments[1] ? this.sizeCost(node.arguments[1]) : ZERO) : undefined;
   }
 
   // cost of a built-in instance method given the cost of its receiver, the receiver's size and one callback call
@@ -1233,7 +1263,7 @@ class Analyzer {
 
     const dom = table.dom(name);
     if (dom) {
-      return { row: dom, size: name === 'insertAdjacentHTML' ? (node.arguments[1] ? this.sizeCost(node.arguments[1]) : ZERO) : this.subtreeCost(first), callback: null };
+      return { row: dom, size: this.domSize(dom, node), callback: null };
     }
 
     const row = table.method(name, this.ownerHints(receiver));
