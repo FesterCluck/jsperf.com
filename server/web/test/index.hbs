@@ -210,11 +210,11 @@
           {{/if}}
           {{#with space}}
             <tr class="complexity-heading">
-              <th scope="colgroup" colspan="3">Extra memory <small>the most held at once beyond the inputs: what each call builds, then the variables that keep growing</small></th>
+              <th scope="colgroup" colspan="3">Space <small>the most held at once beyond the inputs, one row for each variable, loop and call of the test</small></th>
             </tr>
             {{#each items}}
-              <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}{{#if variable}} space-variable{{/if}}">
-                <th scope="row">{{#if code}}<code>{{code}}</code>{{/if}}{{#if variable}} <small class="complexity-tag">variable</small>{{/if}}</th>
+              <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}">
+                <th scope="row">{{#if code}}<code>{{code}}</code>{{/if}}{{#if tag}} <small class="complexity-tag">{{tag}}</small>{{/if}}</th>
                 <td class="complexity-breakdown">
                   <div class="bigo-line">
                     <span class="bigo-graph space-graph bigo-{{cls}}" title="{{label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
@@ -236,6 +236,12 @@
                 </td>
               </tr>
             {{/each}}
+            {{#if more}}
+              <tr class="complexity-row space-row complexity-end">
+                <th scope="row"><em>+{{more}} more</em></th>
+                <td class="complexity-breakdown"></td>
+              </tr>
+            {{/if}}
           {{/with}}
         {{/with}}
       {{/each}}
