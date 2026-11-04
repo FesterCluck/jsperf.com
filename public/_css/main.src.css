@@ -750,6 +750,48 @@ applet {
 .bigo-graph .space-icon { width: 12px; height: 12px; margin-right: 4px; }
 .complexity-total .bigo-graph .space-icon { width: 14px; height: 14px; }
 
+/* a step that is a call opens to show the steps of that call, one level further in */
+.bigo-expandable summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 6.2em;
+  cursor: pointer;
+  list-style: none;
+}
+
+.bigo-expandable summary::-webkit-details-marker {
+  display: none;
+}
+
+.bigo-expandable summary::after {
+  content: "+";
+  color: #6b7a88;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.bigo-expandable[open] summary::after {
+  content: "\2212";
+}
+
+.bigo-expandable summary:focus-visible {
+  outline: 2px solid #4a90c2;
+  outline-offset: 2px;
+}
+
+.bigo-expandable[open] {
+  flex: 1 0 100%;
+  align-items: flex-start;
+  width: auto;
+}
+
+.bigo-nested {
+  margin: .5em 0 .2em 1.2em;
+  padding-left: .7em;
+  border-left: 2px solid #c9d3dc;
+}
+
 /* where the preparation code and the tests run; it has to stay visible, browsers throttle hidden frames */
 #test-frame {
   display: block;

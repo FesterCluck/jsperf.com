@@ -1181,6 +1181,23 @@ lab.experiment('complexity analyzer', () => {
       Code.expect(analyzeTest(page, 'many(data);').calls[0].moreSteps).to.equal(2);
     });
 
+    lab.test('opens a step that is a call into the steps of that call', () => {
+      const code = 'function leaf(a) { return a.slice(0).sort(); } function mid(a) { var t = leaf(a); for (var i = 0; i < a.length; i++) { t.indexOf(a[i]); } return t; } mid(arr);';
+      const nested = (steps) => steps.map((s) => (s.steps ? `${s.name}:${s.cls}[${nested(s.steps)}]` : `${s.name}:${s.cls}`)).join(', ');
+      const { calls, space } = analyzeTest(none, code);
+      Code.expect(nested(calls[0].steps)).to.equal(
+        'leaf:onlogn[.sort:onlogn[copy elements to a work list:on, merge sort the runs:onlogn, write the order back:on]], for loop:on2');
+      Code.expect(nested(space.items[0].steps)).to.equal(
+        'leaf:on[.sort:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]], for loop:o1');
+    });
+
+    lab.test('does not open a function inside itself, nor deeper than the nesting limit', () => {
+      Code.expect(analyzeTest(none, 'function f(n) { return f(n - 1); } f(5);').calls[0].steps).to.equal([{ name: 'f', cls: 'o1' }]);
+      const code = 'function a(x) { return b(x); } function b(x) { return c(x); } function c(x) { return d(x); } function d(x) { return x.sort(); } a(arr);';
+      const depth = (steps) => (steps && steps.length ? 1 + Math.max(...steps.map((s) => depth(s.steps))) : 0);
+      Code.expect(depth(analyzeTest(none, code).calls[0].steps)).to.equal(3);
+    });
+
     lab.test('leaves single operations alone', () => {
       Code.expect(stepsOf('Math.max(1, 2);')).to.equal([[]]);
       Code.expect(stepsOf('data.push(1);')).to.equal([[]]);
