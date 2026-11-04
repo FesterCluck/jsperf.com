@@ -397,7 +397,10 @@ def('new', 'Event', '1', '1', { blink: BL('core/dom/events/event.cc', 'Event') }
 def('new', 'CustomEvent', '1', '1', { blink: BL('core/dom/events/custom_event.cc', 'CustomEvent') });
 def('new', 'EventTarget', '1', '1', { blink: BL('core/dom/events/event_target.cc', 'EventTarget') });
 def('new', 'TextEncoder TextDecoder', '1', '1', { blink: BL('modules/encoding/text_encoder.cc', 'Create') });
-def('new', 'URL URLSearchParams Blob MutationObserver IntersectionObserver ResizeObserver', 'sized', 'sized', { est: true, note: 'parses or copies what it is given' });
+def('new', 'URL', 'sized', 'sized', { blink: BL('core/url/url.cc', 'URL'), note: 'parses the string it is given' });
+def('new', 'URLSearchParams', 'sized', 'sized', { blink: BL('core/url/url_search_params.cc', 'URLSearchParams'), note: 'parses the query string it is given' });
+def('new', 'Blob', 'sized', 'sized', { blink: BL('core/fileapi/blob.cc', 'Create'), note: 'copies the parts it is given' });
+def('new', 'MutationObserver IntersectionObserver ResizeObserver', '1', '1', { est: true, note: 'registers a callback; observe() attaches it to one target' });
 
 // DOM methods are matched by name alone, before the JavaScript methods, so none may share a name with one of those
 // time `tree`: walks the tree the receiver is in
@@ -425,6 +428,10 @@ def('dom', 'getAttribute setAttribute removeAttribute hasAttribute', '1', '1', {
 def('dom', 'addEventListener removeEventListener', '1', '1', { blink: BL('core/dom/events/event_target.cc', 'addEventListener'), note: 'compares against the listeners already registered for the type, which are few' });
 def('dom', 'dispatchEvent', '1', '1', { blink: BL('core/dom/events/event_target.cc', 'dispatchEvent'), note: 'runs the listeners synchronously; what they cost is the cost of their own code' });
 def('dom', 'getBoundingClientRect getClientRects', 'tree', '1', { blink: BL('core/dom/element.cc', 'getClientRects'), note: 'forces style and layout if the page changed since the last frame' });
+def('dom', 'getItem removeItem key', '1', '1', { blink: BL('modules/storage/storage_area.cc', 'getItem'), note: 'a lookup in the cached copy of the storage area' });
+def('dom', 'setItem', '1', '1', { blink: BL('modules/storage/storage_area.cc', 'setItem'), note: 'copies the value, linear in its length, and queues the write to disk' });
+def('dom', 'getRandomValues', 'n', 'n', { blink: BL('modules/crypto/crypto.cc', 'getRandomValues'), note: 'fills the array passed' });
+def('dom', 'randomUUID', '1', '1', { blink: BL('modules/crypto/crypto.cc', 'randomUUID') });
 def('dom', 'postMessage', 'n', 'n', { blink: BL('core/frame/dom_window.cc', 'postMessage'), note: 'serializes the message with the structured clone algorithm' });
 def('dom', 'pushState replaceState', 'n', 'n', { blink: BL('core/frame/history.cc', 'pushState'), note: 'serializes the state object with the structured clone algorithm' });
 def('dom', 'getComputedStyle', '1', '1', { blink: BL('core/frame/local_dom_window.cc', 'getComputedStyle'), note: 'returns a live declaration; the style is resolved when a property is read' });
