@@ -24,13 +24,19 @@ lab.experiment('complexity analyzer', () => {
   lab.experiment('the example page', () => {
     lab.test('hash lookup + binary search is O(n) overall, with per-call classes', () => {
       const result = analyzeTest(examplePage, fixture('complexity-test-4.js.txt'));
+      // the helpers of the page's preparation code show up inside the loops that call them
+      const hashValue = { name: 'hashValue', cls: 'o1', steps: [{ name: 'Math.imul', cls: 'o1' }], more: 0 };
       Code.expect(result.estimate).to.be.true();
       Code.expect(result.overall).to.equal('on');
       Code.expect(result.calls).to.equal([
-        { code: 'buildLookupTable(sharedData)', cls: 'on', steps: [{ name: 'Object.create', cls: 'o1' }, { name: 'for loop', cls: 'on' }] },
-        { code: 'checksum(sharedData)', cls: 'on', steps: [{ name: 'for loop', cls: 'on' }] },
+        {
+          code: 'buildLookupTable(sharedData)',
+          cls: 'on',
+          steps: [{ name: 'Object.create', cls: 'o1' }, { name: 'for loop', cls: 'on', perPass: true, steps: [hashValue], more: 0 }]
+        },
+        { code: 'checksum(sharedData)', cls: 'on', steps: [{ name: 'for loop', cls: 'on', perPass: true, steps: [hashValue], more: 0 }] },
         { code: 'constantLookup(lookup, targetKeys[k])', cls: 'o1' },
-        { code: 'binarySearch(sortedData, targetKeys[k])', cls: 'ologn', steps: [{ name: 'while loop', cls: 'ologn' }] }
+        { code: 'binarySearch(sortedData, targetKeys[k])', cls: 'ologn', steps: [{ name: 'while loop', cls: 'ologn', perPass: true, steps: [{ name: 'compareAsc', cls: 'o1' }], more: 0 }] }
       ]);
     });
 
@@ -1225,9 +1231,31 @@ lab.experiment('complexity analyzer', () => {
       const nested = (steps) => steps.map((s) => (s.steps ? `${s.name}:${s.cls}[${nested(s.steps)}]` : `${s.name}:${s.cls}`)).join(', ');
       const { calls, space } = analyzeTest(none, code);
       Code.expect(nested(calls[0].steps)).to.equal(
-        'leaf:onlogn[.sort:onlogn[copy elements to a work list:on, merge sort the runs:onlogn, write the order back:on]], for loop:on2');
+        'leaf:onlogn[.sort:onlogn[copy elements to a work list:on, merge sort the runs:onlogn, write the order back:on]], for loop:on2[t.indexOf:on]');
       Code.expect(nested(space.items[0].steps)).to.equal(
-        'leaf:on[.sort:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]], for loop:o1');
+        'leaf:on[.sort:on[copy elements to a work list:on, merge sort the runs:on, write the order back:o1]], for loop:o1[t.indexOf:o1]');
+    });
+
+    lab.test('opens only as many steps as it shows', () => {
+      const calls = Array.from({ length: 10 }, (_, i) => `h(${i});`).join(' ');
+      const [row] = analyzeTest(none, `function h(x) { return x.slice(0).sort(); } function f(a) { ${calls} } f(data);`).calls;
+      Code.expect(row.steps.length).to.equal(8);
+      Code.expect(row.moreSteps).to.equal(2);
+      Code.expect(row.steps.every((s) => s.steps.length === 1)).to.be.true();
+    });
+
+    lab.test('opens a loop into what one pass of it calls, shared functions included', () => {
+      const page = { initHTML: '<script>function cheap(v) { return v + 1; } function heavy(a) { for (var i = 0; i < a.length; i++) {} }</script>' };
+      const steps = (code) => analyzeTest(page, code).calls[0].steps;
+      const loop = steps('function f(arr) { for (var i = 0; i < arr.length; i++) { cheap(arr[i]); heavy(arr); } } f(data);')[0];
+      Code.expect(loop).to.include({ name: 'for loop', cls: 'on2', perPass: true });
+      Code.expect(loop.steps.map((s) => `${s.name}:${s.cls}`)).to.equal(['cheap:o1', 'heavy:on']);
+      // loops inside loops, a while with a single statement as its body, and the nesting limit
+      Code.expect(steps('function f(arr) { for (var i = 0; i < arr.length; i++) { for (var j = 0; j < arr.length; j++) { cheap(j); } } } f(data);')[0].steps[0]).to.include({ name: 'for loop', perPass: true, cls: 'on' });
+      Code.expect(steps('function f(arr) { var i = 0; while (i < arr.length) cheap(i++); } f(data);')[0].steps.map((s) => s.name)).to.equal(['cheap']);
+      const deep = steps('function f(arr) { for (var a = 0; a < 2; a++) { for (var b = 0; b < 2; b++) { for (var c = 0; c < 2; c++) { for (var d = 0; d < 2; d++) { cheap(d); } } } } } f(data);');
+      const depth = (list) => (list && list.length ? 1 + Math.max(...list.map((s) => depth(s.steps))) : 0);
+      Code.expect(depth(deep)).to.equal(3);
     });
 
     lab.test('does not open a function inside itself, nor deeper than the nesting limit', () => {

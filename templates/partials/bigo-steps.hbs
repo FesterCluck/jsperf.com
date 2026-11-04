@@ -1,6 +1,7 @@
 {{#if steps}}
   {{#unless nested}}<span class="bigo-then" aria-hidden="true">=</span>{{/unless}}
   <span class="bigo-steps{{#if nested}} bigo-nested{{/if}}" role="list" aria-label="What {{#if nested}}{{step}}{{else}}{{code}}{{/if}} is made of">
+    {{#if perPass}}<span class="bigo-each" aria-hidden="true">each pass</span>{{/if}}
     {{#each steps}}
       {{#if steps}}
         <details class="bigo-step bigo-expandable" role="listitem">

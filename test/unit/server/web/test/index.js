@@ -244,7 +244,7 @@ lab.experiment('web/test plugin', function () {
         calls: [{
           code: 'mid(arr)',
           cls: 'on2',
-          steps: [{ name: 'leaf', cls: 'onlogn', steps: [{ name: '.sort', cls: 'onlogn', steps: [{ name: 'copy', cls: 'on' }], more: 0 }], more: 2 }, { name: 'for loop', cls: 'on2' }]
+          steps: [{ name: 'leaf', cls: 'onlogn', steps: [{ name: '.sort', cls: 'onlogn', steps: [{ name: 'copy', cls: 'on' }], more: 0 }], more: 2 }, { name: 'for loop', cls: 'on2', perPass: true, steps: [{ name: 'hash', cls: 'o1' }], more: 0 }]
         }]
       };
       pagesServiceStub.getBySlug.returns(Promise.resolve([basePage(), [{ testID: 1, title: 'one', code: 'mid(arr)', defer: 'n', complexity }], [], []]));
@@ -252,7 +252,7 @@ lab.experiment('web/test plugin', function () {
       const $ = cheerio.load((await server.inject(request)).payload);
       const row = $('tr.complexity-row').eq(0);
       const open = row.find('details.bigo-expandable');
-      Code.expect(open.length).to.equal(2);
+      Code.expect(open.length).to.equal(3);
       Code.expect(open.first().children('summary').find('.bigo-step-name').text()).to.equal('leaf');
       Code.expect(open.first().children('summary').attr('title')).to.equal('leaf: O(n log n). Show what it is made of');
       Code.expect(row.find('> td > .bigo-line > .bigo-steps > .bigo-step').length).to.equal(2);
@@ -263,6 +263,9 @@ lab.experiment('web/test plugin', function () {
       Code.expect(inner.find('.bigo-then').length).to.equal(0);
       Code.expect(inner.find('.bigo-more').text()).to.equal('+2 more');
       Code.expect(open.eq(1).children('.bigo-steps').find('.bigo-step-name').text()).to.equal('copy');
+      // a loop says its steps are what one pass does
+      Code.expect(open.eq(2).children('.bigo-steps').find('.bigo-each').text()).to.equal('each pass');
+      Code.expect(open.first().children('.bigo-steps').find('.bigo-each').length).to.equal(0);
     });
 
     lab.test('marks undecidable results as unknown', async function () {
