@@ -26,7 +26,7 @@ const NAMESPACES = ['Math', 'Number', 'Date', 'console', 'performance', 'Symbol'
 
 const set = (items) => new Set(items);
 
-const RANK = { 1: 0, log: 1, arg: 2, n: 3, subtree: 3, markup: 3, sized: 3, nlogn: 4, unknown: 9 };
+const RANK = { 1: 0, log: 1, arg: 2, n: 3, subtree: 3, markup: 3, tree: 3, sized: 3, nlogn: 4, unknown: 9 };
 const base = (time) => time.replace(/\*cb$/, '');
 const rank = (time) => RANK[base(time)];
 
@@ -151,7 +151,6 @@ const common = (engine) => {
   const s = statics(engine);
   const ctors = table.rows.filter((r) => r.kind === 'ctor');
   const globals = table.rows.filter((r) => r.kind === 'global' && r[engine].time === '1').map((r) => r.name);
-  const dom = (time) => set(table.rows.filter((r) => r.kind === 'dom' && r[engine].time === time).map((r) => r.name));
   return {
     TYPED_ARRAYS: set(TYPED_ARRAYS),
     O1_NAMESPACES: s.o1Namespaces,
@@ -161,9 +160,7 @@ const common = (engine) => {
     O1_STATICS: s.o1,
     SIZED_CONSTRUCTORS: set(ctors.filter((r) => r[engine].time === 'sized').map((r) => r.name)),
     O1_CONSTRUCTORS: set(ctors.filter((r) => r[engine].time === '1').map((r) => r.name)),
-    DOM_O1_METHODS: dom('1'),
-    DOM_SUBTREE_METHODS: dom('subtree'),
-    DOM_MARKUP_METHODS: dom('markup')
+    DOM: new Map(table.rows.filter((r) => r.kind === 'dom').map((r) => [r.name, r[engine].time]))
   };
 };
 

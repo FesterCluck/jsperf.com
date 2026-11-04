@@ -55,7 +55,7 @@ const nameOf = (owner, name) => (owner === 'new' ? `new ${name}` : (owner === ''
  * @param {string} names space separated
  * @param {string} time
  * @param {string} space
- * @param {object} [opts] { steps, v8: {time, space, steps, shared}, ref, est, primary, note, shared }
+ * @param {object} [opts] { steps, v8: {time, space, steps, shared}, ref, blink, est, primary, note, shared }
  */
 const def = (owner, names, time, space, opts = {}) => {
   for (const name of names.split(' ')) {
@@ -74,6 +74,7 @@ const def = (owner, names, time, space, opts = {}) => {
       spec,
       v8,
       ref: opts.ref || null,
+      blink: opts.blink || null,
       est: Boolean(opts.est),
       primary: Boolean(opts.primary),
       note: opts.note || ''
@@ -84,6 +85,7 @@ const def = (owner, names, time, space, opts = {}) => {
 const V8 = 'src/builtins/';
 const TQ = (file, symbol) => `${V8}${file}.tq#${symbol}`;
 const CC = (file, symbol) => `${V8}${file}.cc#${symbol}`;
+const BL = (file, symbol) => `third_party/blink/renderer/${file}#${symbol}`;
 
 // ---------------------------------------------------------------------------------------------------------------
 // global functions
@@ -128,7 +130,7 @@ def('Boolean.prototype', 'toString valueOf', '1', '1', { ref: TQ('boolean', 'Boo
 def('Symbol', 'for keyFor', '1', '1', { ref: CC('builtins-symbol', 'SymbolFor') });
 def('Symbol.prototype', 'description toString valueOf @@toPrimitive', '1', '1', { ref: TQ('symbol', 'SymbolPrototypeToString') });
 def('Error', 'isError', '1', '1');
-def('Error', 'captureStackTrace prepareStackTrace', '1', '1', { est: true, note: 'capturing a stack trace is bounded by the stack trace limit' });
+def('Error', 'captureStackTrace prepareStackTrace', '1', '1', { ref: CC('builtins-error', 'ErrorCaptureStackTrace'), note: 'capturing a stack trace is bounded by the stack trace limit' });
 def('Error.prototype', 'toString', '1', '1', { ref: CC('builtins-error', 'ErrorPrototypeToString') });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -144,7 +146,7 @@ def('Date', 'now parse UTC', '1', '1', { ref: CC('builtins-date', 'DateNow') });
 def('Date.prototype', 'getDate getDay getFullYear getHours getMilliseconds getMinutes getMonth getSeconds getTime getTimezoneOffset getUTCDate getUTCDay getUTCFullYear getUTCHours getUTCMilliseconds getUTCMinutes getUTCMonth getUTCSeconds getYear valueOf', '1', '1', { ref: CC('builtins-date-gen', 'DatePrototypeGetTime') });
 def('Date.prototype', 'setDate setFullYear setHours setMilliseconds setMinutes setMonth setSeconds setTime setUTCDate setUTCFullYear setUTCHours setUTCMilliseconds setUTCMinutes setUTCMonth setUTCSeconds setYear', '1', '1', { ref: CC('builtins-date', 'DatePrototypeSetFullYear') });
 def('Date.prototype', 'toDateString toISOString toJSON toString toTimeString toUTCString toGMTString @@toPrimitive', '1', '1', { ref: CC('builtins-date', 'DatePrototypeToISOString') });
-def('Date.prototype', 'toLocaleDateString toLocaleString toLocaleTimeString', '1', '1', { est: true, note: 'formatted by ICU, bounded by the format' });
+def('Date.prototype', 'toLocaleDateString toLocaleString toLocaleTimeString', '1', '1', { ref: CC('builtins-date', 'DatePrototypeToLocaleString'), note: 'formatted by ICU, bounded by the format' });
 
 // ---------------------------------------------------------------------------------------------------------------
 // String
@@ -182,7 +184,7 @@ def('String.prototype', 'padStart padEnd', 'arg', 'arg', {
   ref: TQ('string-pad', 'StringPrototypePadStart')
 });
 def('String.prototype', 'toLowerCase toUpperCase toLocaleLowerCase toLocaleUpperCase normalize toWellFormed', 'n', 'n', { steps: [['map every character', 'n', '1'], ['build result', 'n', 'n']], ref: CC('builtins-string', 'StringPrototypeNormalize') });
-def('String.prototype', 'localeCompare', 'n', '1', { est: true, note: 'ICU collation compares until the strings differ' });
+def('String.prototype', 'localeCompare', 'n', '1', { ref: CC('builtins-string', 'StringPrototypeLocaleCompare'), note: 'ICU collation compares until the strings differ' });
 def('String.prototype', 'match matchAll search replace replaceAll split', 'n', 'n', {
   steps: [['scan for the pattern', 'n', '1'], ['build result', 'n', 'n']],
   ref: TQ('string-match-search', 'StringPrototypeMatch'),
@@ -195,7 +197,7 @@ def('String.prototype', 'anchor big blink bold fixed fontcolor fontsize italics 
 // ---------------------------------------------------------------------------------------------------------------
 def('RegExp', 'escape', 'n', 'n');
 def('RegExp', '@@species', '1', '1');
-def('RegExp', '$1 $2 $3 $4 $5 $6 $7 $8 $9 $_ $& $` $\' $+ input lastMatch lastParen leftContext rightContext', '1', '1', { est: true, note: 'legacy static properties of the last match' });
+def('RegExp', '$1 $2 $3 $4 $5 $6 $7 $8 $9 $_ $& $` $\' $+ input lastMatch lastParen leftContext rightContext', '1', '1', { ref: CC('builtins-regexp', 'RegExpInputGetter'), note: 'legacy static properties of the last match' });
 def('RegExp.prototype', 'exec test @@match @@replace @@search @@split', 'n', '1', {
   steps: [['match from lastIndex', 'n', '1'], ['build the match array', '1', '1']],
   ref: TQ('regexp-exec', 'RegExpPrototypeExec'),
@@ -209,7 +211,7 @@ def('RegExp.prototype', 'dotAll flags global hasIndices ignoreCase multiline sou
 // ---------------------------------------------------------------------------------------------------------------
 def('Array', 'isArray of', '1', '1', { ref: TQ('array-isarray', 'ArrayIsArray'), note: 'Array.of copies its (literal) arguments' });
 def('Array', 'from', 'n*cb', 'n', { steps: [['iterate the source', 'n', '1'], ['callback per element', 'n*cb', 'cb'], ['store', 'n', 'n']], ref: TQ('array-from', 'ArrayFrom') });
-def('Array', 'fromAsync', 'n*cb', 'n', { est: true });
+def('Array', 'fromAsync', 'n*cb', 'n', { ref: TQ('array-from-async', 'ArrayFromAsync') });
 def('Array', '@@species', '1', '1');
 def('Array.prototype', 'at', '1', '1', { ref: TQ('array-at', 'ArrayPrototypeAt') });
 def('Array.prototype', 'push pop', '1', '1', { ref: CC('builtins-array', 'ArrayPush'), note: 'amortized: the backing store grows by half plus 16 and is trimmed when it is less than half full' });
@@ -341,7 +343,7 @@ def('%StringIteratorPrototype%', 'next', '1', '1', { ref: TQ('string-iterator', 
 def('%RegExpStringIteratorPrototype%', 'next', 'n', 'n', { est: true, note: 'runs the next match' });
 def('%ForInIteratorPrototype%', 'next', '1', '1', { est: true });
 def('%AsyncFromSyncIteratorPrototype%', 'next return throw', '1', '1', { est: true });
-def('%GeneratorPrototype%', 'next return throw', 'unknown', 'unknown', { est: true, note: 'runs the generator body up to its next yield' });
+def('%GeneratorPrototype%', 'next return throw', 'unknown', 'unknown', { ref: CC('builtins-generator-gen', 'GeneratorPrototypeNext'), note: 'runs the generator body up to its next yield' });
 def('%AsyncGeneratorPrototype%', 'next return throw', 'unknown', 'unknown', { est: true });
 def('Promise', 'all allSettled any race', 'n', 'n', { steps: [['iterate the promises', 'n', '1'], ['subscribe to each', 'n', 'n']], ref: TQ('promise-all', 'PromiseAll') });
 def('Promise', 'resolve reject try withResolvers @@species', '1', '1', { ref: TQ('promise-resolve', 'PromiseResolve') });
@@ -366,26 +368,66 @@ def('new', 'Function', 'unknown', 'unknown', { note: 'compiles the source it is 
 // ---------------------------------------------------------------------------------------------------------------
 // the host: not part of ECMAScript (browser and DOM), estimated
 // ---------------------------------------------------------------------------------------------------------------
-def('', 'setTimeout clearTimeout setInterval clearInterval queueMicrotask requestAnimationFrame cancelAnimationFrame', '1', '1', { est: true, note: 'schedules and returns; the callback runs later, once' });
-def('', 'structuredClone', 'n', 'n', { est: true, steps: [['walk the value graph', 'n', 'log'], ['copy it', 'n', 'n']] });
-def('console', 'log warn error info debug dir table trace time timeEnd timeLog group groupEnd groupCollapsed assert count countReset clear', '1', '1', { est: true, note: 'printing an object is bounded by what the console shows' });
-def('performance', 'now mark measure clearMarks clearMeasures getEntries getEntriesByName getEntriesByType', '1', '1', { est: true });
-def('Intl.Collator.prototype', 'compare resolvedOptions', '1', '1', { est: true });
-def('Intl.DateTimeFormat.prototype', 'format formatToParts formatRange formatRangeToParts resolvedOptions', '1', '1', { est: true });
-def('Intl.NumberFormat.prototype', 'format formatToParts formatRange formatRangeToParts resolvedOptions', '1', '1', { est: true });
-def('Intl.PluralRules.prototype', 'select selectRange resolvedOptions', '1', '1', { est: true });
-def('Intl.RelativeTimeFormat.prototype', 'format formatToParts resolvedOptions', '1', '1', { est: true });
-def('Intl.ListFormat.prototype', 'format formatToParts resolvedOptions', '1', '1', { est: true, note: 'bounded by the list passed, which is short' });
-def('Intl', 'getCanonicalLocales supportedValuesOf', '1', '1', { est: true });
-def('Intl.Collator', 'supportedLocalesOf', '1', '1', { est: true });
-def('new', 'Event CustomEvent EventTarget', '1', '1', { est: true });
-def('dom', 'createElement createTextNode createComment createDocumentFragment getElementById', '1', '1', { est: true, note: 'allocates one node' });
+def('', 'setTimeout clearTimeout setInterval clearInterval queueMicrotask', '1', '1', { est: true, note: 'schedules and returns; the callback runs later, once (Blink DOMTimer, V8 EnqueueMicrotask)' });
+def('', 'requestAnimationFrame', '1', '1', { blink: BL('core/dom/scripted_animation_controller.cc', 'RegisterFrameCallback'), note: 'appends to the frame callbacks; the callback runs before the next paint' });
+def('', 'cancelAnimationFrame', '1', '1', { blink: BL('core/dom/scripted_animation_controller.cc', 'CancelFrameCallback'), note: 'erases from the pending callbacks, which are few' });
+def('', 'structuredClone', 'n', 'n', { blink: BL('bindings/core/v8/serialization/v8_script_value_serializer.cc', 'Serialize'), steps: [['walk the value graph', 'n', 'log'], ['copy it', 'n', 'n']], note: 'Blink serializes with V8\'s ValueSerializer, then deserializes the bytes' });
+def('', 'fetch', '1', '1', { blink: BL('core/fetch/global_fetch.cc', 'fetch'), note: 'starts the request and returns a promise' });
+def('', 'atob btoa', 'n', 'n', { est: true, note: 'Blink decodes / encodes base64, one pass over the string' });
+def('console', 'log warn error info debug dir table trace time timeEnd timeLog group groupEnd groupCollapsed assert count countReset clear', '1', '1', { ref: CC('builtins-console', 'CONSOLE_METHOD_LIST'), note: 'V8 hands the arguments to the inspector; printing an object is bounded by what the console shows' });
+def('performance', 'now', '1', '1', { blink: BL('core/timing/performance.cc', 'now') });
+def('performance', 'mark measure clearMarks clearMeasures', '1', '1', { blink: BL('core/timing/performance_user_timing.cc', 'ClearMarks'), note: 'marks are kept by name; measure looks its endpoints up' });
+def('performance', 'getEntries getEntriesByName getEntriesByType', 'n', 'n', { blink: BL('core/timing/performance.cc', 'getEntriesByName'), note: 'copies the matching entries of the buffers in start order' });
+def('Intl.Collator.prototype', 'compare', '1', '1', { ref: CC('builtins-intl', 'CollatorPrototypeCompare') });
+def('Intl.DateTimeFormat.prototype', 'format formatToParts formatRange formatRangeToParts', '1', '1', { ref: CC('builtins-intl', 'DateTimeFormatPrototypeFormatRange') });
+def('Intl.NumberFormat.prototype', 'format formatToParts formatRange formatRangeToParts', '1', '1', { ref: CC('builtins-intl', 'NumberFormatPrototypeFormatToParts') });
+def('Intl.PluralRules.prototype', 'select selectRange', '1', '1', { ref: CC('builtins-intl', 'PluralRulesPrototypeSelect') });
+def('Intl.RelativeTimeFormat.prototype', 'format formatToParts', '1', '1', { ref: CC('builtins-intl', 'RelativeTimeFormatPrototypeFormatToParts') });
+def('Intl.ListFormat.prototype', 'format formatToParts', '1', '1', { est: true, note: 'bounded by the list passed, which is short' });
+def('Intl.Collator.prototype', 'resolvedOptions', '1', '1', { est: true });
+def('Intl.DateTimeFormat.prototype', 'resolvedOptions', '1', '1', { est: true });
+def('Intl.NumberFormat.prototype', 'resolvedOptions', '1', '1', { est: true });
+def('Intl.PluralRules.prototype', 'resolvedOptions', '1', '1', { est: true });
+def('Intl.RelativeTimeFormat.prototype', 'resolvedOptions', '1', '1', { est: true });
+def('Intl.ListFormat.prototype', 'resolvedOptions', '1', '1', { est: true });
+def('Intl', 'getCanonicalLocales', '1', '1', { ref: CC('builtins-intl', 'IntlGetCanonicalLocales') });
+def('Intl', 'supportedValuesOf', '1', '1', { ref: CC('builtins-intl', 'IntlSupportedValuesOf') });
+def('Intl.Collator', 'supportedLocalesOf', '1', '1', { ref: CC('builtins-intl', 'CollatorSupportedLocalesOf') });
+def('new', 'Event', '1', '1', { blink: BL('core/dom/events/event.cc', 'Event') });
+def('new', 'CustomEvent', '1', '1', { blink: BL('core/dom/events/custom_event.cc', 'CustomEvent') });
+def('new', 'EventTarget', '1', '1', { blink: BL('core/dom/events/event_target.cc', 'EventTarget') });
+def('new', 'TextEncoder TextDecoder', '1', '1', { blink: BL('modules/encoding/text_encoder.cc', 'Create') });
+def('new', 'URL URLSearchParams Blob MutationObserver IntersectionObserver ResizeObserver', 'sized', 'sized', { est: true, note: 'parses or copies what it is given' });
+
+// DOM methods are matched by name alone, before the JavaScript methods, so none may share a name with one of those
+// time `tree`: walks the tree the receiver is in
+def('dom', 'createElement', '1', '1', { blink: BL('core/dom/document.cc', 'CreateElementForBinding'), note: 'allocates one node' });
+def('dom', 'createTextNode createComment createDocumentFragment', '1', '1', { blink: BL('core/dom/document.cc', 'createTextNode'), note: 'allocates one node' });
+def('dom', 'getElementById', '1', '1', { blink: BL('core/dom/tree_scope.cc', 'getElementById'), note: 'a hash lookup in the tree scope\'s id map' });
 def('dom', 'appendChild insertBefore removeChild replaceChild', 'subtree', 'subtree', {
-  est: true,
+  blink: BL('core/dom/container_node.cc', 'AppendChild'),
   steps: [['visit the subtree being moved', 'subtree', '1'], ['link it in', '1', '1']],
   note: 'constant for a lone node, linear for a fragment or a populated element'
 });
-def('dom', 'insertAdjacentHTML', 'markup', 'markup', { est: true, steps: [['parse the markup', 'markup', 'markup'], ['insert the nodes', 'markup', '1']] });
+def('dom', 'append prepend before after replaceWith', 'subtree', 'subtree', { blink: BL('core/dom/node.cc', 'append'), steps: [['visit the nodes being inserted', 'subtree', '1'], ['link them in', '1', '1']] });
+def('dom', 'remove', 'subtree', '1', { blink: BL('core/dom/node.cc', 'remove'), note: 'detaching a subtree notifies every node in it' });
+def('dom', 'insertAdjacentHTML', 'markup', 'markup', { blink: BL('core/dom/element.cc', 'insertAdjacentHTML'), steps: [['parse the markup', 'markup', 'markup'], ['insert the nodes', 'markup', '1']] });
+def('dom', 'querySelector querySelectorAll', 'tree', 'tree', {
+  blink: BL('core/css/selector_query.cc', 'QueryAll'),
+  steps: [['walk the tree', 'tree', '1'], ['match each element', 'tree', '1']],
+  note: 'an `#id` selector is a hash lookup; any other walks the root\'s subtree (class and tag selectors may stop early)'
+});
+def('dom', 'matches', '1', '1', { blink: BL('core/css/selector_query.cc', 'Matches'), note: 'matches the one element, right to left through its ancestors for a descendant selector' });
+def('dom', 'closest', 'log', '1', { blink: BL('core/dom/element.cc', 'closest'), note: 'walks the ancestors, as deep as the tree' });
+def('dom', 'getElementsByClassName getElementsByTagName', '1', '1', { blink: BL('core/dom/container_node.cc', 'getElementsByClassName'), note: 'returns a live collection; the tree is walked when it is read, and cached' });
+def('dom', 'cloneNode', 'tree', 'tree', { blink: BL('core/dom/node.cc', 'cloneNode'), note: 'a shallow clone is one node; deep clones the whole subtree' });
+def('dom', 'getAttribute setAttribute removeAttribute hasAttribute', '1', '1', { blink: BL('core/dom/element.cc', 'getAttribute'), note: 'an element has few attributes, searched in order' });
+def('dom', 'addEventListener removeEventListener', '1', '1', { blink: BL('core/dom/events/event_target.cc', 'addEventListener'), note: 'compares against the listeners already registered for the type, which are few' });
+def('dom', 'dispatchEvent', '1', '1', { blink: BL('core/dom/events/event_target.cc', 'dispatchEvent'), note: 'runs the listeners synchronously; what they cost is the cost of their own code' });
+def('dom', 'getBoundingClientRect getClientRects', 'tree', '1', { blink: BL('core/dom/element.cc', 'getClientRects'), note: 'forces style and layout if the page changed since the last frame' });
+def('dom', 'postMessage', 'n', 'n', { blink: BL('core/frame/dom_window.cc', 'postMessage'), note: 'serializes the message with the structured clone algorithm' });
+def('dom', 'pushState replaceState', 'n', 'n', { blink: BL('core/frame/history.cc', 'pushState'), note: 'serializes the state object with the structured clone algorithm' });
+def('dom', 'getComputedStyle', '1', '1', { blink: BL('core/frame/local_dom_window.cc', 'getComputedStyle'), note: 'returns a live declaration; the style is resolved when a property is read' });
 
 // ---------------------------------------------------------------------------------------------------------------
 // lookups

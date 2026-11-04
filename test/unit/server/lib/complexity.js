@@ -930,10 +930,26 @@ lab.experiment('complexity analyzer', () => {
 
     lab.test('a node that gets children appended is no longer a lone node', () => {
       Code.expect(both('var a = document.createElement("a"); a.insertAdjacentHTML("beforeend", "<b></b>"); host.appendChild(a);')).to.equal('on/on on/on');
-      Code.expect(both('var a = document.createElement("a"); a.append(host); a.prepend(host); host.appendChild(a);')).to.equal('unknown/unknown unknown/unknown');
+      Code.expect(both('var a = document.createElement("a"); a.append(host); a.prepend(host); host.appendChild(a);')).to.equal('on/on on/on');
       Code.expect(both('var a = document.createElement("a"); a.textContent = "x"; a.title = "t"; this.x = 1; host.appendChild(a);')).to.equal('o1/o1 o1/o1');
       Code.expect(both('var a = document.createElement("a"); a.replaceChild(host, host); host.appendChild(a);')).to.equal('on/on on/on');
       Code.expect(both('var a = document.createElement("a"); a.insertBefore(host, null); host.appendChild(a);')).to.equal('on/on on/on');
+    });
+
+    lab.test('queries walk the tree, except for an id', () => {
+      Code.expect(both('host.querySelectorAll(".row");')).to.equal('on/on on/on');
+      Code.expect(both('host.querySelector("#main");')).to.equal('o1/o1 o1/o1');
+      Code.expect(both('host.querySelector(selector);')).to.equal('on/on on/on');
+      Code.expect(both('host.querySelector();')).to.equal('on/on on/on');
+      Code.expect(both('host.querySelector(1);')).to.equal('on/on on/on');
+      Code.expect(both('host.matches(".row"); host.getAttribute("id"); host.getElementsByClassName("row");')).to.equal('o1/o1 o1/o1');
+    });
+
+    lab.test('closest climbs the ancestors; messages and history entries are serialized', () => {
+      Code.expect(both('host.closest(".row");')).to.equal('ologn/ologn ologn/ologn');
+      Code.expect(both('window.postMessage(list, "*");')).to.equal('on/on on/on');
+      Code.expect(both('history.pushState(list, "");')).to.equal('on/on on/on');
+      Code.expect(both('history.pushState();')).to.equal('o1/o1 o1/o1');
     });
 
     lab.test('markup is parsed in linear time', () => {
