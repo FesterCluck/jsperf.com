@@ -821,6 +821,13 @@ applet {
   width: auto;
 }
 
+.bigo-each {
+  align-self: center;
+  font-size: .8em;
+  font-style: italic;
+  color: #6b7a88;
+}
+
 .bigo-nested {
   margin: .5em 0 .2em 1.2em;
   padding-left: .7em;

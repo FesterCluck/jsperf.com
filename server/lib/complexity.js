@@ -1352,15 +1352,14 @@ class Analyzer {
     return owner === '?' ? `.${name}` : `${owner}.${name}`;
   }
 
-  // the steps of a function the page defined: its loops, and the calls it makes outside of loops
-  bodySteps (fn) {
-    const { body } = fn;
+  // the steps of a function the page defined, or of the body of one of its loops: the loops, and the calls made outside of loops
+  bodySteps (body) {
     const statements = body.type === 'BlockStatement' ? body.body : [body];
     const collect = () => {
       const out = [];
       for (const stmt of statements) {
         if (/^(For|While|DoWhile)/.test(stmt.type)) {
-          out.push({ name: `${LOOP_NAMES[stmt.type]} loop`, cost: this.cost(stmt) });
+          out.push({ name: `${LOOP_NAMES[stmt.type]} loop`, cost: this.cost(stmt), loop: stmt });
           continue;
         }
         for (const { node, mult } of this.listCalls({ body: [stmt] })) {
@@ -1374,34 +1373,13 @@ class Analyzer {
     return body.type === 'BlockStatement' ? this.withScope(statements, collect) : collect();
   }
 
-  // the steps that are calls get their own steps, down to `maxNesting` levels; it runs inside the function whose steps they are
-  expandSteps (steps, depth, seen) {
-    return steps.map((step, i) => {
-      if (!step.node || depth + 1 >= this.limits.maxNesting || i >= this.limits.maxInternals) {
-        return step;
-      }
-
-      return Object.assign({}, step, { inner: safe(() => this.internals(step.node, depth + 1, seen), null) });
-    });
-  }
-
-  /**
-   * The steps one call is made of, each with its own class and, when the step is a call, the steps of that call; none
-   * when it is a single operation. A function is not opened inside itself.
-   *
-   * @returns {{steps: Array<{name: string, cls: string, steps?: Array, more?: number}>, more: number}}
-   */
-  internals (node, depth = 0, seen = new Set()) {
-    let steps = this.builtinSteps(node);
-    if (steps === null) {
-      const user = this.userFunction(node);
-      steps = user && !seen.has(user.fn)
-        ? this.inFunction(user.fn, user.idx, false, node.arguments, () => this.expandSteps(this.bodySteps(user.fn), depth, new Set(seen).add(user.fn)))
-        : [];
-    }
-
-    const shown = steps.slice(0, this.limits.maxInternals).map(({ name, cost, inner }) => {
+  // the first steps, as they are shown, and how many were left out
+  shownSteps (steps) {
+    const shown = steps.slice(0, this.limits.maxInternals).map(({ name, cost, inner, loop }) => {
       const step = { name, cls: classify(cost) };
+      if (loop) {
+        step.perPass = true;
+      }
       if (inner && inner.steps.length) {
         step.steps = inner.steps;
         step.more = inner.more;
@@ -1410,6 +1388,39 @@ class Analyzer {
       return step;
     });
     return { steps: shown, more: steps.length - shown.length };
+  }
+
+  // the steps that are calls get their own steps, and a loop the calls of its body (what one pass does), down to
+  // `maxNesting` levels; it runs inside the function whose steps they are
+  expandSteps (steps, depth, seen) {
+    return steps.map((step, i) => {
+      if (depth + 1 >= this.limits.maxNesting || i >= this.limits.maxInternals) {
+        return step;
+      }
+
+      const inner = step.loop
+        ? safe(() => this.shownSteps(this.expandSteps(this.bodySteps(step.loop.body), depth + 1, seen)), null)
+        : safe(() => this.internals(step.node, depth + 1, seen), null);
+      return Object.assign({}, step, { inner });
+    });
+  }
+
+  /**
+   * The steps one call is made of, each with its own class and, when the step is a call or a loop, the steps of that call
+   * or of one pass of the loop; none when it is a single operation. A function is not opened inside itself.
+   *
+   * @returns {{steps: Array<{name: string, cls: string, steps?: Array, more?: number}>, more: number}}
+   */
+  internals (node, depth = 0, seen = new Set()) {
+    let steps = this.builtinSteps(node);
+    if (steps === null) {
+      const user = this.userFunction(node);
+      steps = user && !seen.has(user.fn)
+        ? this.inFunction(user.fn, user.idx, false, node.arguments, () => this.expandSteps(this.bodySteps(user.fn.body), depth, new Set(seen).add(user.fn)))
+        : [];
+    }
+
+    return this.shownSteps(steps);
   }
 }
 
@@ -1763,7 +1774,7 @@ const snippet = (code, node) => {
 };
 
 // bump when the rules change: stored estimates with an older version are analyzed again on their next view
-const VERSION = 10;
+const VERSION = 11;
 
 const result = (overall, calls, extra) => Object.assign({ estimate: true, version: VERSION, overall, calls }, extra);
 
@@ -1901,7 +1912,8 @@ const present = (value, engine) => {
   const stepList = (steps, depth) => steps.slice(0, DEFAULT_LIMITS.maxInternals).map((s) => Object.assign(
     { step: String(s.name).slice(0, 40) },
     info(s.cls),
-    depth + 1 < DEFAULT_LIMITS.maxNesting && Array.isArray(s.steps) && s.steps.length ? { steps: stepList(s.steps, depth + 1), moreSteps: Number(s.more) || 0 } : {}
+    depth + 1 < DEFAULT_LIMITS.maxNesting && Array.isArray(s.steps) && s.steps.length ? { steps: stepList(s.steps, depth + 1), moreSteps: Number(s.more) || 0 } : {},
+    s.perPass ? { perPass: true } : {}
   ));
   const stepsOf = (item) => (Array.isArray(item.steps) ? { steps: stepList(item.steps, 0), moreSteps: Number(item.moreSteps) || 0 } : {});
   const rate = (item) => Object.assign({ code: String(item.code) }, info(item.cls), stepsOf(item), item.variable ? { variable: true } : {});
