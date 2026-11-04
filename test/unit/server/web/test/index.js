@@ -162,6 +162,11 @@ lab.experiment('web/test plugin', function () {
       Code.expect($('svg #curve-on3, svg #curve-unknown, svg #curve-o1').length).to.equal(3);
       Code.expect($('#bigo-guides').length).to.equal(1);
 
+      // one box before the table (so a stylesheet rule can reach it) shows or hides every breakdown
+      Code.expect($('input#show-breakdown[type=checkbox]').attr('checked')).to.exist();
+      Code.expect($('label[for=show-breakdown]').text()).to.include('made of');
+      Code.expect($('#show-breakdown ~ #test-table').length).to.equal(1);
+
       // result rows are still addressable by id and come first in each pair
       Code.expect($('#title-1').length).to.equal(1);
       Code.expect($('#results-2').text()).to.equal('pending…');
