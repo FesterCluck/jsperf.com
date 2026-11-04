@@ -1003,6 +1003,45 @@ lab.experiment('complexity analyzer', () => {
     const space = (code, p = page) => analyzeTest(p, code).space;
     const names = (code, p = page) => space(code, p).variables.map((v) => `${v.code}:${v.cls}`);
 
+    lab.test('a collection that grows by copies holds every copy', () => {
+      const loop = (body) => `var out = []; for (var i = 0; i < data.length; i++) { ${body} }`;
+      // what is pushed decides the size of one step
+      Code.expect(space(loop('out.push(data.slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push(data.map(function (x) { return x; }));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push([...data]);')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push(data.slice(0).slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push(...data);')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push(Object.keys(data));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push(new Array(i));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push({ ...data });')).overall).to.equal('on2');
+      Code.expect(space(loop('out.unshift(data.slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.add(data.slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.set(i, data.slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.splice(0, 0, data.slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out[i] = data.slice(0);')).overall).to.equal('on2');
+      Code.expect(space('var s = ""; for (var i = 0; i < data.length; i++) { s += "ab".repeat(data.length); }').overall).to.equal('on2');
+      Code.expect(space('function copyOf(a) { return a.slice(0); } var out = []; for (var i = 0; i < data.length; i++) { out.push(copyOf(data)); }').overall).to.equal('on2');
+      Code.expect(space('var out = []; for (var i = 0; i < data.length; i++) { out.push(parseInt(i)); out.push(String(i)); }').overall).to.equal('on');
+      // a number, a reference, a short literal or a key is one slot
+      Code.expect(space(loop('out.push(i); out.push(data); out.push(data.length); out.push([i, i]);')).overall).to.equal('on');
+      Code.expect(space(loop('out.set(data.slice(0), i);')).overall).to.equal('on');
+      Code.expect(space(loop('out.push();')).overall).to.equal('on');
+      Code.expect(space(loop('out.push(data.indexOf(i));')).overall).to.equal('on');
+      // one push outside any loop is a single copy
+      Code.expect(space('var out = []; out.push(data.slice(0));').overall).to.equal('on');
+      // the calls and the variable are rated the same
+      Code.expect(space(loop('out.push(data.slice(0));')).items.map((c) => c.cls)).to.equal(['on2']);
+      Code.expect(names(loop('out.push(data.slice(0));'))).to.equal(['out:on2']);
+      Code.expect(names('var out = []; out.push(data.slice(0));')).to.equal(['out:on']);
+      // loops multiply the step, whatever depth they are at
+      Code.expect(space('var out = []; for (var i = 0; i < data.length; i++) { for (var j = 0; j < data.length; j++) { out.push(data.slice(0)); } }').overall).to.equal('on3');
+      // a function that grows what it was given is seen by the loop that calls it
+      Code.expect(space('function add(list, x) { list.push(x.slice(0)); } var out = []; for (var i = 0; i < data.length; i++) { add(out, data); }').overall).to.equal('on2');
+      // growing by the biggest of several steps
+      Code.expect(space(loop('out.push(i); out.push(data.slice(0));')).overall).to.equal('on2');
+      Code.expect(space(loop('out.push(data.slice(0)); out.push(i);')).overall).to.equal('on2');
+    });
+
     lab.test('constant memory stays constant', () => {
       Code.expect(space('data.indexOf(5); Math.max(1, 2); var k = [1, 2, 3].map(function (x) { return x; });').overall).to.equal('o1');
       Code.expect(space('Object.assign({}, data); Object.freeze(data);').overall).to.equal('o1');
