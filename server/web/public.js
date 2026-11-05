@@ -1,29 +1,28 @@
-exports.register = function (server, options, next) {
-  // public assets like CSS and JS
-  server.route({
-    method: 'GET',
-    path: '/public/{path*}',
-    handler: {
-      directory: {
-        path: 'public',
-        index: false,
-        redirectToSlash: false
-      }
-    }
-  });
+'use strict';
 
-  server.route({
-    method: 'GET',
-    path: '/robots.txt',
-    handler: {
-      file: 'public/robots.txt'
-    }
-  });
-
-  return next();
-};
-
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/assets',
-  dependencies: 'inert'
+  dependencies: ['@hapi/inert'],
+  register: (server) => {
+    // public assets like CSS and JS
+    server.route({
+      method: 'GET',
+      path: '/public/{path*}',
+      handler: {
+        directory: {
+          path: 'public',
+          index: false,
+          redirectToSlash: false
+        }
+      }
+    });
+
+    server.route({
+      method: 'GET',
+      path: '/robots.txt',
+      handler: {
+        file: 'public/robots.txt'
+      }
+    });
+  }
 };

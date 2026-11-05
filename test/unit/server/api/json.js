@@ -1,6 +1,6 @@
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../support/server');
 const sinon = require('sinon');
 
 const JsonPlugin = require('../../../../server/api/json');
@@ -9,35 +9,21 @@ const lab = exports.lab = Lab.script();
 let request, server;
 const expect = Code.expect;
 
-const MockPagesService = {
-  register: (server, options, next) => {
-    server.expose('getBySlug', function () {});
-    next();
-  }
-};
+const MockPagesService = Support.mock('services/pages', ['getBySlug']);
 
-MockPagesService.register.attributes = {
-  name: 'services/pages'
-};
-
-lab.beforeEach(function (done) {
-  const plugins = [ MockPagesService, JsonPlugin ];
-  server = new Hapi.Server();
-  server.connection();
-  server.register(plugins, done);
+lab.beforeEach(async () => {
+  server = await Support.createServer({ views: false, plugins: [MockPagesService, JsonPlugin] });
 });
 
 lab.experiment('json', function () {
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     request = {
       method: 'GET',
       url: '/test/1.json'
     };
-
-    done();
   });
 
-  lab.test('it returns page data', function (done) {
+  lab.test('it returns page data', async function () {
     const data = [
       { // page
         id: 1,
@@ -78,26 +64,22 @@ lab.experiment('json', function () {
 
     sinon.stub(server.plugins['services/pages'], 'getBySlug').returns(Promise.resolve(data));
 
-    server.inject(request, function (response) {
-      expect(response.statusCode).to.equal(200);
-      expect(response.headers['content-type']).to.equal('application/json; charset=utf-8');
-      expect(response.result.page).to.equal(data[0]);
-      expect(response.result.tests).to.equal(data[1]);
-      expect(response.result.revisions).to.equal(data[2]);
-      expect(response.result.comments).to.equal(data[3]);
-      done();
-    });
+    const response = await server.inject(request);
+    expect(response.statusCode).to.equal(200);
+    expect(response.headers['content-type']).to.equal('application/json; charset=utf-8');
+    expect(response.result.page).to.equal(data[0]);
+    expect(response.result.tests).to.equal(data[1]);
+    expect(response.result.revisions).to.equal(data[2]);
+    expect(response.result.comments).to.equal(data[3]);
   });
 
-  lab.test('it returns errors', function (done) {
+  lab.test('it returns errors', async function () {
     sinon.stub(server.plugins['services/pages'], 'getBySlug').returns(Promise.reject(new Error('DB is down')));
 
-    server.inject(request, function (response) {
-      expect(response.headers['content-type']).to.equal('application/json; charset=utf-8');
-      expect(response.result.statusCode).to.equal(500);
-      expect(response.result.error).to.equal('Internal Server Error');
-      expect(response.result.message).to.equal('An internal server error occurred');
-      done();
-    });
+    const response = await server.inject(request);
+    expect(response.headers['content-type']).to.equal('application/json; charset=utf-8');
+    expect(response.result.statusCode).to.equal(500);
+    expect(response.result.error).to.equal('Internal Server Error');
+    expect(response.result.message).to.equal('An internal server error occurred');
   });
 });

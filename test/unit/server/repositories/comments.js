@@ -1,136 +1,83 @@
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../support/server');
 const sinon = require('sinon');
 
 const Comments = require('../../../../server/repositories/comments');
 
-const MockDb = {
-  register: (server, options, next) => {
-    server.expose('genericQuery', function () {});
-    next();
-  }
-};
-
-MockDb.register.attributes = {
-  name: 'db'
-};
+const MockDb = Support.mock('db', ['genericQuery']);
 
 const lab = exports.lab = Lab.script();
 
 lab.experiment('Comments Repository', () => {
   let server, comments, genericQueryStub;
 
-  lab.before((done) => {
-    server = new Hapi.Server();
+  lab.before(async () => {
+    server = await Support.createServer({ views: false, plugins: [MockDb, Comments] });
 
-    server.connection();
-
-    server.register([
-      MockDb,
-      Comments
-    ], (err) => {
-      if (err) return done(err);
-
-      comments = server.plugins['repositories/comments'];
-      done();
-    });
+    comments = server.plugins['repositories/comments'];
   });
 
-  lab.beforeEach((done) => {
+  lab.beforeEach(async () => {
     genericQueryStub = sinon.stub(server.plugins.db, 'genericQuery');
-
-    done();
   });
 
-  lab.afterEach((done) => {
+  lab.afterEach(async () => {
     genericQueryStub.restore();
-
-    done();
   });
 
   lab.experiment('findByPageID', () => {
-    lab.test('selects all from comments where pageID', done => {
-      var pageID = 1;
+    lab.test('selects all from comments where pageID', async () => {
+      const pageID = 1;
       genericQueryStub.returns(Promise.resolve([]));
 
-      comments.findByPageID(pageID)
-        .then(() => {
-          Code.expect(
-            genericQueryStub.calledWithExactly(
-              'SELECT * FROM ?? WHERE pageID = ? ORDER BY published ASC',
-              ['comments', pageID]
-            )
-          ).to.be.true();
-
-          done();
-        });
+      await comments.findByPageID(pageID);
+      Code.expect(
+        genericQueryStub.calledWithExactly(
+          'SELECT * FROM ?? WHERE pageID = ? ORDER BY published ASC',
+          ['comments', pageID]
+        )
+      ).to.be.true();
     });
   });
 
   lab.experiment('create', () => {
-    var payload;
-    var insertId;
+    let payload;
+    let insertId;
 
-    lab.before(done => {
+    lab.before(async () => {
       payload = {
         pageID: 123
       };
 
       insertId = 1;
-
-      done();
     });
 
-    lab.test('inserts payload', done => {
-      genericQueryStub.returns(Promise.resolve({ insertId: insertId }));
+    lab.test('inserts payload', async () => {
+      genericQueryStub.returns(Promise.resolve({ insertId }));
 
-      comments.create(payload)
-        .then(newId => {
-          Code.expect(
-            genericQueryStub.calledWithExactly(
-              'INSERT INTO ?? SET ?',
-              [
-                'comments',
-                payload
-              ]
-            )
-          ).to.be.true();
-          Code.expect(newId).to.equal(insertId);
-
-          done();
-        });
+      const newId = await comments.create(payload);
+      Code.expect(
+        genericQueryStub.calledWithExactly(
+          'INSERT INTO ?? SET ?',
+          [
+            'comments',
+            payload
+          ]
+        )
+      ).to.be.true();
+      Code.expect(newId).to.equal(insertId);
     });
 
-    lab.test('returns an error if query failed', done => {
-      var testErrMsg = 'testing';
-      var testErr = new Error(testErrMsg);
+    lab.test('returns an error if query failed', async () => {
+      const testErrMsg = 'testing';
+      const testErr = new Error(testErrMsg);
 
       genericQueryStub.returns(Promise.reject(testErr));
 
-      comments.create(payload)
-        .catch(function (err) {
-          Code.expect(err).to.be.instanceof(Error);
-          Code.expect(err.message).to.equal(testErrMsg);
-
-          done();
-        });
-    });
-  });
-
-  lab.experiment('delete', () => {
-    lab.test('should delete specific comment', (done) => {
-      genericQueryStub.returns(Promise.resolve());
-      const id = 1;
-      comments.delete(id).then(() => {
-        Code.expect(genericQueryStub.calledWithExactly(
-          'DELETE FROM ?? WHERE id = ?',
-          ['comments', id]
-        )).to.be.true();
-
-        done();
-      })
-        .catch(done);
+      const err = await Code.expect(comments.create(payload)).to.reject();
+      Code.expect(err).to.be.instanceof(Error);
+      Code.expect(err.message).to.equal(testErrMsg);
     });
   });
 });

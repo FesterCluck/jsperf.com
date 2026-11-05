@@ -1,32 +1,27 @@
-var Lab = require('lab');
-var Code = require('code');
-const Joi = require('joi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
 const schema = require('../../../../server/lib/schema');
 
-var lab = exports.lab = Lab.script();
+const lab = exports.lab = Lab.script();
 
 lab.experiment('Schema Library', function () {
   lab.experiment('Medium Text', function () {
-    lab.test('is a Joi schema', function (done) {
+    lab.test('is a Joi schema', async function () {
       const joiDesc = schema.mediumText.describe();
       Code.expect(Array.isArray(joiDesc.rules)).to.be.true();
-
-      done();
     });
   });
 
   lab.experiment('Test Page', function () {
-    lab.test('is a Joi schema', function (done) {
+    lab.test('is a Joi schema', async function () {
       const joiDesc = schema.testPage.describe();
       Code.expect(joiDesc.type).to.equal('object');
-
-      done();
     });
 
     lab.experiment('test array', () => {
       let value;
 
-      lab.beforeEach((done) => {
+      lab.beforeEach(async () => {
         value = {
           author: 'Pitcher Man',
           authorEmail: 'kool-aid@kraft.com',
@@ -40,11 +35,17 @@ lab.experiment('Schema Library', function () {
           teardown: ''
           // `test` intentionally missing. will be set in each test
         };
-
-        done();
       });
 
-      lab.test('title with code is valid', (done) => {
+      lab.test('too many tests is invalid', async () => {
+        value.test = Array.from({ length: 51 }, (_, i) => ({ title: `t${i}`, code: `t=${i}` }));
+
+        const { error: err } = schema.testPage.validate(value);
+        Code.expect(err).to.exist();
+        Code.expect(err.details[0].path[0]).to.equal('test');
+      });
+
+      lab.test('title with code is valid', async () => {
         value.test = [
           {
             title: 't1',
@@ -56,14 +57,11 @@ lab.experiment('Schema Library', function () {
           }
         ];
 
-        Joi.validate(value, schema.testPage, (err) => {
-          Code.expect(err).to.not.exist();
-
-          done();
-        });
+        const { error: err } = schema.testPage.validate(value);
+        Code.expect(err).to.not.exist();
       });
 
-      lab.test('blank title with blank code is valid', (done) => {
+      lab.test('blank title with blank code is valid', async () => {
         value.test = [
           {
             title: 't1',
@@ -79,16 +77,13 @@ lab.experiment('Schema Library', function () {
           }
         ];
 
-        Joi.validate(value, schema.testPage, (err, res) => {
-          Code.expect(err).to.not.exist();
-          Code.expect(res.test[1].title).to.equal('GENERATED_DEFAULT_DELETE_ME');
-          Code.expect(res.test[1].code).to.equal('GENERATED_DEFAULT_DELETE_ME');
-
-          done();
-        });
+        const { error: err, value: res } = schema.testPage.validate(value);
+        Code.expect(err).to.not.exist();
+        Code.expect(res.test[1].title).to.equal('GENERATED_DEFAULT_DELETE_ME');
+        Code.expect(res.test[1].code).to.equal('GENERATED_DEFAULT_DELETE_ME');
       });
 
-      lab.test('blank title with code is invalid', (done) => {
+      lab.test('blank title with code is invalid', async () => {
         value.test = [
           {
             title: 't1',
@@ -104,15 +99,12 @@ lab.experiment('Schema Library', function () {
           }
         ];
 
-        Joi.validate(value, schema.testPage, (err, res) => {
-          Code.expect(err).to.not.exist();
-          Code.expect(res.test[2].title).to.equal('GENERATED_DEFAULT_DELETE_ME');
-
-          done();
-        });
+        const { error: err, value: res } = schema.testPage.validate(value);
+        Code.expect(err).to.not.exist();
+        Code.expect(res.test[2].title).to.equal('GENERATED_DEFAULT_DELETE_ME');
       });
 
-      lab.test('title with blank code is invalid', (done) => {
+      lab.test('title with blank code is invalid', async () => {
         value.test = [
           {
             title: 't1',
@@ -128,22 +120,35 @@ lab.experiment('Schema Library', function () {
           }
         ];
 
-        Joi.validate(value, schema.testPage, (err, res) => {
-          Code.expect(err).to.not.exist();
-          Code.expect(res.test[2].code).to.equal('GENERATED_DEFAULT_DELETE_ME');
-
-          done();
-        });
+        const { error: err, value: res } = schema.testPage.validate(value);
+        Code.expect(err).to.not.exist();
+        Code.expect(res.test[2].code).to.equal('GENERATED_DEFAULT_DELETE_ME');
       });
     });
   });
 
   lab.experiment('comment', function () {
-    lab.test('is a Joi schema', function (done) {
+    lab.test('is a Joi schema', async function () {
       const joiDesc = schema.comment.describe();
       Code.expect(joiDesc.type).to.equal('object');
-
-      done();
     });
+  });
+});
+
+lab.experiment('Schema Library auth', () => {
+  lab.test('register accepts a valid username and password', () => {
+    const { error } = schema.register.validate({ username: 'alice-b', password: 'correct horse' });
+    Code.expect(error).to.not.exist();
+  });
+
+  lab.test('register rejects bad usernames and short passwords', () => {
+    Code.expect(schema.register.validate({ username: 'a b', password: 'correct horse' }).error).to.exist();
+    Code.expect(schema.register.validate({ username: '-ab', password: 'correct horse' }).error).to.exist();
+    Code.expect(schema.register.validate({ username: 'alice', password: 'short' }).error).to.exist();
+  });
+
+  lab.test('login requires username and password', () => {
+    Code.expect(schema.login.validate({ username: 'alice', password: 'x' }).error).to.not.exist();
+    Code.expect(schema.login.validate({ username: 'alice' }).error).to.exist();
   });
 });

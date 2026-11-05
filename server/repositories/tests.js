@@ -1,17 +1,22 @@
+'use strict';
+
 const defaults = require('../lib/defaults');
 
 const name = 'repositories/tests';
 const table = 'tests';
 
-exports.register = function (server, options, next) {
+const register = (server, options) => {
   const db = server.plugins.db;
-  const columns = ['pageID', 'title', 'defer', 'code'];
+  const columns = ['pageID', 'title', 'defer', 'code', 'complexity'];
+
+  // JSON column: NULL until the test has been analyzed
+  const json = (value) => (value ? db.escape(JSON.stringify(value)) : 'NULL');
 
   server.expose('bulkCreate', function (pageID, tests) {
-    var values = [];
-    for (var i = 0, tl = tests.length; i < tl; i++) {
-      var test = tests[i];
-      values.push('(' + pageID + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ')');
+    let values = [];
+    for (let i = 0, tl = tests.length; i < tl; i++) {
+      const test = tests[i];
+      values.push('(' + db.escape(pageID) + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ', ' + json(test.complexity) + ')');
     }
 
     values = values.join(', ');
@@ -25,7 +30,7 @@ exports.register = function (server, options, next) {
   });
 
   server.expose('bulkUpdate', function (pageID, tests, isOwn) {
-    let queries = [];
+    const queries = [];
 
     tests.forEach(test => {
       // setting existing test title and code to blank indicates it should be deleted
@@ -34,14 +39,14 @@ exports.register = function (server, options, next) {
         // ... if it's theirs to delete ...
         if (isOwn && test.testID) {
           server.log('info', `deleting test ${test.testID} from page ${pageID}`);
-          queries.push(db.genericQuery(`DELETE FROM ?? WHERE pageID = ${pageID} AND testID = ${test.testID}`, [table]));
+          queries.push(db.genericQuery('DELETE FROM ?? WHERE pageID = ? AND testID = ?', [table, pageID, test.testID]));
         }
         // ... otherwise skip over the test
       } else {
         if (isOwn && test.testID) {
-          queries.push(db.genericQuery(`UPDATE ?? SET title = ${db.escape(test.title)}, defer =  ${db.escape(test.defer)} , code =  ${db.escape(test.code)} WHERE pageID = ${pageID} AND testID = ${test.testID}`, [table]));
+          queries.push(db.genericQuery('UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?', [table, test.title, test.defer, test.code, test.complexity ? JSON.stringify(test.complexity) : null, pageID, test.testID]));
         } else {
-          queries.push(db.genericQuery(`INSERT INTO ?? (??) VALUES (${pageID}, ${db.escape(test.title)}, ${db.escape(test.defer)}, ${db.escape(test.code)})`, [table, columns]));
+          queries.push(db.genericQuery('INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)', [table, columns, pageID, test.title, test.defer, test.code, test.complexity ? JSON.stringify(test.complexity) : null]));
         }
       }
     });
@@ -59,16 +64,19 @@ exports.register = function (server, options, next) {
     });
   });
 
+  server.expose('setComplexity', function (testID, complexity) {
+    return db.genericQuery('UPDATE ?? SET complexity = ? WHERE testID = ?', [table, JSON.stringify(complexity), testID]);
+  });
+
   server.expose('findByPageID', function (pageID) {
     server.log(['debug'], `${name}::findByPageID: ${JSON.stringify(arguments)}`);
 
     return db.genericQuery('SELECT * FROM ?? WHERE pageID = ?', [table, pageID]);
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name,
-  dependencies: ['db']
+  dependencies: ['db'],
+  register
 };

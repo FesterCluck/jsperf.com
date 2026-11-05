@@ -1,109 +1,58 @@
-const path = require('path');
-
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../../support/server');
 const sinon = require('sinon');
 
 const BrowsePlugin = require('../../../../../server/web/browse/index');
 
-const MockRepo = {
-  register: (server, options, next) => {
-    server.expose('getLatestVisible', function () {});
-    server.expose('getLatestVisibleForAuthor', function () {});
-    next();
-  }
-};
-
-MockRepo.register.attributes = {
-  name: 'repositories/pages'
-};
-
-const MockCache = {
-  register: (server, options, next) => {
-    server.expose('get', (key, cb) => { cb(null, null); });
-    server.expose('set', (key, val, ttl, cb) => { cb(null); });
-    next();
-  }
-};
-
-MockCache.register.attributes = {
-  name: 'cache'
-};
+const MockRepo = Support.mock('repositories/pages', ['getLatestVisible', 'getLatestVisibleForAuthor']);
+const MockCache = Support.mock('cache', ['get', 'set']);
 
 const lab = exports.lab = Lab.script();
 let request, server, getLatestVisibleStub, getLatestVisibleForAuthorStub;
 
-lab.beforeEach(function (done) {
-  const plugins = [ MockRepo, MockCache, BrowsePlugin ];
-  server = new Hapi.Server();
-  server.connection();
-  server.register(require('vision'), () => {
-    server.views({
-      engines: {
-        hbs: require('handlebars')
-      },
-      path: './server/web',
-      layout: true,
-      helpersPath: 'templates/helpers',
-      partialsPath: 'templates/partials',
-      relativeTo: path.join(__dirname, '..', '..', '..', '..', '..')
-    });
-    server.register(plugins, (err) => {
-      if (err) return done(err);
+lab.beforeEach(async () => {
+  server = await Support.createServer({ plugins: [MockRepo, MockCache, BrowsePlugin] });
 
-      getLatestVisibleStub = sinon.stub(server.plugins['repositories/pages'], 'getLatestVisible');
-      getLatestVisibleForAuthorStub = sinon.stub(server.plugins['repositories/pages'], 'getLatestVisibleForAuthor');
-
-      done();
-    });
-  });
+  sinon.stub(server.plugins.cache, 'get').resolves(null);
+  sinon.stub(server.plugins.cache, 'set').resolves();
+  getLatestVisibleStub = sinon.stub(server.plugins['repositories/pages'], 'getLatestVisible');
+  getLatestVisibleForAuthorStub = sinon.stub(server.plugins['repositories/pages'], 'getLatestVisibleForAuthor');
 });
 
 lab.experiment('browse', function () {
   lab.experiment('page', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       request = {
         method: 'GET',
         url: '/browse'
       };
-
-      done();
     });
 
-    lab.test('it responds with the browse page', function (done) {
+    lab.test('it responds with the browse page', async function () {
       getLatestVisibleStub.returns(Promise.resolve([]));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
 
-    lab.test('it responds with generic error', function (done) {
+    lab.test('it responds with generic error', async function () {
       getLatestVisibleStub.returns(Promise.reject(new Error()));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
 
-    lab.test('it responds with error from cache get', (done) => {
+    lab.test('it responds with error from cache get', async () => {
       const testErr = new Error('testing get');
-      sinon.stub(server.plugins.cache, 'get').callsArgWith(1, testErr);
+      server.plugins.cache.get.rejects(testErr);
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(500);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(500);
     });
 
-    lab.test('it responds with items from cache get', (done) => {
-      sinon.stub(server.plugins.cache, 'get').callsArgWith(1, null, {
+    lab.test('it responds with items from cache get', async () => {
+      server.plugins.cache.get.resolves({
         item: [
           {
             url: 'test',
@@ -116,38 +65,30 @@ lab.experiment('browse', function () {
         ]
       });
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
 
-    lab.test('it responds with generic error when cache set errors', (done) => {
+    lab.test('it responds with generic error when cache set errors', async () => {
       getLatestVisibleStub.returns(Promise.resolve([]));
       const testErr = new Error('testing set');
-      sinon.stub(server.plugins.cache, 'set').callsArgWith(3, testErr);
+      server.plugins.cache.set.rejects(testErr);
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.contain('Sorry. Could not find tests to browse.');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.result).to.contain('Sorry. Could not find tests to browse.');
     });
   });
 
   lab.experiment('atom', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       request = {
         method: 'GET',
         url: '/browse.atom'
       };
-
-      done();
     });
 
-    lab.test('it responds with atom feed', function (done) {
+    lab.test('it responds with atom feed', async function () {
       getLatestVisibleStub.returns(Promise.resolve([
         {
           updated: new Date(),
@@ -155,50 +96,39 @@ lab.experiment('browse', function () {
         }
       ]));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
-        Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.contain('<entry>');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
+      Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.contain('<entry>');
     });
 
-    lab.test('it responds with empty atom feed', function (done) {
+    lab.test('it responds with empty atom feed', async function () {
       getLatestVisibleStub.returns(Promise.resolve([]));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
-        Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.not.contain('<entry>');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
+      Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.not.contain('<entry>');
     });
 
-    lab.test('it responds with generic error', function (done) {
+    lab.test('it responds with generic error', async function () {
       getLatestVisibleStub.returns(Promise.reject(new Error()));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(500);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(500);
     });
   });
 
   lab.experiment('author page', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       request = {
         method: 'GET',
         url: '/browse/test-author'
       };
-
-      done();
     });
 
-    lab.test('it responds with the browse page', function (done) {
-      var testTitle = 'My First Test';
+    lab.test('it responds with the browse page', async function () {
+      const testTitle = 'My First Test';
       getLatestVisibleForAuthorStub.returns(Promise.resolve([{
         updated: new Date(),
         published: new Date(),
@@ -208,45 +138,34 @@ lab.experiment('browse', function () {
         revisionCount: 1
       }]));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.result).to.be.string().and.to.contain(testTitle);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.result).to.be.string().and.to.contain(testTitle);
     });
 
-    lab.test('it responds with not found if no results for author', function (done) {
+    lab.test('it responds with not found if no results for author', async function () {
       getLatestVisibleForAuthorStub.returns(Promise.resolve([]));
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(404);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(404);
     });
 
-    lab.test('it responds with generic error', function (done) {
+    lab.test('it responds with generic error', async function () {
       getLatestVisibleForAuthorStub.returns(Promise.reject(new Error()));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(500);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(500);
     });
   });
 
   lab.experiment('author atom', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       request = {
         method: 'GET',
         url: '/browse/test-author.atom'
       };
-
-      done();
     });
 
-    lab.test('it responds with atom feed', function (done) {
+    lab.test('it responds with atom feed', async function () {
       getLatestVisibleForAuthorStub.returns(Promise.resolve([
         {
           updated: new Date(),
@@ -254,35 +173,26 @@ lab.experiment('browse', function () {
         }
       ]));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
-        Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.contain('<entry>');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
+      Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.contain('<entry>');
     });
 
-    lab.test('it responds with empty atom feed', function (done) {
+    lab.test('it responds with empty atom feed', async function () {
       getLatestVisibleForAuthorStub.returns(Promise.resolve([]));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-        Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
-        Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.not.contain('<entry>');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
+      Code.expect(response.headers['content-type']).to.equal('application/atom+xml;charset=UTF-8');
+      Code.expect(response.result).to.be.string().and.to.startWith('<feed').and.to.not.contain('<entry>');
     });
 
-    lab.test('it responds with generic error', function (done) {
+    lab.test('it responds with generic error', async function () {
       getLatestVisibleForAuthorStub.returns(Promise.reject(new Error()));
 
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(500);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(500);
     });
   });
 });

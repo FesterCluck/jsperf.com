@@ -1,7 +1,9 @@
+'use strict';
+
 const name = 'repositories/pages';
 const table = 'pages';
 
-exports.register = function (server, options, next) {
+const register = (server, options) => {
   const db = server.plugins.db;
 
   server.expose('create', function (payload) {
@@ -59,9 +61,9 @@ exports.register = function (server, options, next) {
     //   AND visible = 'y'
     // ORDER BY updated DESC
 
-    var wcAuthor = '%' + author + '%';
-    var a = author.trim().replace('-', '%');
-    var gh = author.trim();
+    const wcAuthor = '%' + author + '%';
+    const a = author.trim().replace('-', '%');
+    const gh = author.trim();
 
     return db.genericQuery(
       "SELECT id AS pID, slug AS url, revision, title, published, updated, author, authorGitHub, (SELECT COUNT(*) FROM pages WHERE slug = url AND visible = 'y') AS revisionCount, (SELECT COUNT(*) FROM tests WHERE pageID = pID) AS testCount FROM pages WHERE (author LIKE ? OR author LIKE ? OR authorGitHub = ?) AND updated IN (SELECT MAX(updated) FROM pages WHERE visible = 'y' GROUP BY slug) AND visible = 'y' ORDER BY updated DESC",
@@ -109,7 +111,7 @@ exports.register = function (server, options, next) {
     // )
     // z ON z.pageID = y.pID';
 
-    var q = '%' + searchTerms + '%';
+    const q = '%' + searchTerms + '%';
 
     return db.genericQuery(
       'SELECT * FROM (SELECT x.id AS pID, x.slug AS url, x.revision, x.title, x.published, x.updated, COUNT(x.slug) AS revisionCount FROM pages x WHERE x.title LIKE ? OR x.info LIKE ? GROUP BY x.slug ORDER BY updated DESC LIMIT 0, 50) y LEFT JOIN (SELECT t.pageID, COUNT(t.pageID) AS testCount FROM tests t GROUP BY t.pageID) z ON z.pageID = y.pID;',
@@ -135,28 +137,6 @@ exports.register = function (server, options, next) {
     );
   });
 
-  server.expose('deleteOneRevisionBySlug', function (slug, rev) {
-    let queries = [];
-
-    queries.push(db.genericQuery('DELETE FROM tests WHERE pageID IN (SELECT id FROM pages WHERE slug = ? AND revision = ?)', [slug, rev]));
-    queries.push(db.genericQuery('DELETE FROM pages WHERE slug = ? AND revision = ?', [slug, rev]));
-
-    return Promise.all(queries).then(function (values) {
-      return values[1].affectedRows;
-    });
-  });
-
-  server.expose('deleteAllRevisionsBySlug', function (slug, rev) {
-    let queries = [];
-
-    queries.push(db.genericQuery('DELETE FROM tests WHERE pageID IN (SELECT id FROM pages WHERE slug = ?)', [slug]));
-    queries.push(db.genericQuery('DELETE FROM pages WHERE slug = ?', [slug]));
-
-    return Promise.all(queries).then(function (values) {
-      return values[1].affectedRows;
-    });
-  });
-
   server.expose('getSitemap', function () {
     return db.genericQuery("SELECT id AS pID, revision, slug, title, updated, (SELECT COUNT(*) FROM tests WHERE pageID = pID) AS testCount FROM pages WHERE visible = 'y' ORDER BY updated DESC");
   });
@@ -179,11 +159,10 @@ exports.register = function (server, options, next) {
         return pageID;
       });
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name,
-  dependencies: ['db']
+  dependencies: ['db'],
+  register
 };

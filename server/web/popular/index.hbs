@@ -5,8 +5,8 @@
 <ul>
   {{#each recent}}
     <li>
-      <a href="/{{url}}{{#compare revision 1}}/{{revision}}{{/compare}}">{{addCode title}}</a> {{#compare author "" operator="==="}} by {{author}} {{/compare}}
-      ({{#if ../admin}}{{hits}} unique visitors - {{/if}}last updated <time datetime="{{DatetoISOString updated}}">{{relativeDate updated}}</time>)
+      <a href="{{@root.base}}/{{url}}{{#compare revision 1}}/{{revision}}{{/compare}}">{{addCode title}}</a> {{#compare author "" operator="==="}} by {{author}} {{/compare}}
+      (last updated <time datetime="{{DatetoISOString updated}}">{{relativeDate updated}}</time>)
   {{else}}
     <li><em>None</em>
   {{/each}}
@@ -17,8 +17,8 @@
 <ul>
   {{#each allTime}}
     <li>
-      <a href="/{{url}}{{#compare revision 1}}/{{revision}}{{/compare}}">{{addCode title}}</a> {{#compare author "" operator="==="}} by {{author}} {{/compare}}
-      ({{#if ../admin}}{{hits}} unique visitors - {{/if}}last updated <time datetime="{{DatetoISOString updated}}">{{relativeDate updated}}</time>)
+      <a href="{{@root.base}}/{{url}}{{#compare revision 1}}/{{revision}}{{/compare}}">{{addCode title}}</a> {{#compare author "" operator="==="}} by {{author}} {{/compare}}
+      (last updated <time datetime="{{DatetoISOString updated}}">{{relativeDate updated}}</time>)
   {{else}}
     <li><em>None</em>
   {{/each}}

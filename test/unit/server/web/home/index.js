@@ -1,123 +1,58 @@
-const path = require('path');
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../../support/server');
 const sinon = require('sinon');
 const defaults = require('../../../../../server/lib/defaults');
 const HomePlugin = require('../../../../../server/web/home/index');
 
-const YarPlugin = {
-  register: require('yar'),
-  options: { cookieOptions: { password: 'password-should-be-32-characters' } }
-};
-
-const AuthPlugin = {
-  register: require('hapi-auth-cookie'),
-  options: {}
-};
-
-const MockPagesService = {
-  register: (server, options, next) => {
-    server.expose('checkIfSlugAvailable', function () {});
-    server.expose('create', function () {});
-    next();
-  }
-};
-
-MockPagesService.register.attributes = {
-  name: 'services/pages'
-};
+const MockPagesService = Support.mock('services/pages', ['checkIfSlugAvailable', 'create']);
 
 const lab = exports.lab = Lab.script();
 let request, server;
 
-lab.beforeEach(function (done) {
-  server = new Hapi.Server();
-
-  server.connection();
-
-  server.register([ AuthPlugin ], function () {
-    server.auth.strategy('session', 'cookie', {
-      password: 'testing',
-      cookie: 'sid-jsperf',
-      redirectTo: false,
-      isSecure: false
-    });
-  });
-
-  server.register(require('vision'), () => {
-    server.views({
-      engines: {
-        hbs: require('handlebars')
-      },
-      path: './server/web',
-      layout: true,
-      helpersPath: 'templates/helpers',
-      partialsPath: 'templates/partials',
-      relativeTo: path.join(__dirname, '..', '..', '..', '..', '..'),
-      context: (request) => ({ credentials: request.auth.credentials })
-    });
-    server.register([
-      YarPlugin,
-      MockPagesService,
-      HomePlugin
-    ], done);
-  });
+lab.beforeEach(async () => {
+  server = await Support.createServer({ yar: true, auth: true, plugins: [MockPagesService, HomePlugin] });
 });
 
 lab.experiment('home', function () {
   lab.experiment('GET', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       request = {
         method: 'GET',
         url: '/'
       };
-
-      done();
     });
 
-    lab.test('it responds with the home page', function (done) {
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-
-        done();
-      });
+    lab.test('it responds with the home page', async function () {
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
 
-    lab.test('it serves a generic title on pages that does not specify one', function (done) {
-      server.inject(request, function (response) {
-        Code.expect(response.payload).to.include('<title>jsPerf: JavaScript performance playground</title>');
-
-        done();
-      });
+    lab.test('it serves a generic title on pages that does not specify one', async function () {
+      const response = await server.inject(request);
+      Code.expect(response.payload).to.include('<title>jsPerf: JavaScript performance playground</title>');
     });
 
-    lab.test('it presents a login option to a user if they have not auth’d with GitHub', function (done) {
-      server.inject(request, function (response) {
-        Code.expect(response.result).to.include('Login with GitHub to Create Test Cases');
-
-        done();
-      });
+    lab.test('it presents a login option to a user if they have not logged in', async function () {
+      const response = await server.inject(request);
+      Code.expect(response.result).to.include('Log in to Create Test Cases');
     });
 
-    lab.test('it presents a save option to a user if they have already auth’d with GitHub', function (done) {
-      request.credentials = {'test': 'profile'};
+    lab.test('it presents a save option to a user if they have already logged in', async function () {
+      request.auth = { strategy: 'session', credentials: { test: 'profile' } };
 
-      server.inject(request, function (response) {
-        Code.expect(response.result).to.include('Save test case');
-        Code.expect(response.payload).to.include('<script src="/public/_js/main.');
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.result).to.include('Save test case');
+      Code.expect(response.payload).to.include('<script src="/public/_js/main.');
     });
   });
 
   lab.experiment('POST', function () {
-    lab.beforeEach(function (done) {
+    lab.beforeEach(async function () {
       request = {
         method: 'POST',
         url: '/',
-        credentials: {'username': 'koolaidman', 'test': 'profile'},
+        auth: { strategy: 'session', credentials: { username: 'koolaidman', test: 'profile' } },
         payload: {
           author: 'Pitcher Man',
           authorEmail: 'kool-aid@kraft.com',
@@ -140,176 +75,132 @@ lab.experiment('home', function () {
           ]
         }
       };
-
-      done();
     });
 
     lab.experiment('validation', function () {
-      lab.test('title required', function (done) {
+      lab.test('title required', async function () {
         delete request.payload.title;
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include('You must enter a title for this test case.');
-
-          done();
-        });
+        Code.expect(response.result).to.include('You must enter a title for this test case.');
       });
 
-      lab.test('slug required', function (done) {
+      lab.test('slug required', async function () {
         delete request.payload.slug;
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include('The slug can only contain alphanumeric characters and hyphens.');
-
-          done();
-        });
+        Code.expect(response.result).to.include('The slug can only contain alphanumeric characters and hyphens.');
       });
 
-      lab.test('test title required if code present', function (done) {
+      lab.test('test title required if code present', async function () {
         // code present in defaults above
         Code.expect(request.payload.test[0].code).to.not.be.empty();
         request.payload.test[0].title = '';
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include(defaults.errors.codeTitle);
-
-          done();
-        });
+        Code.expect(response.result).to.include(defaults.errors.codeTitle);
       });
 
-      lab.test('test code required if title present', function (done) {
+      lab.test('test code required if title present', async function () {
         // title present in defaults above
         Code.expect(request.payload.test[0].title).to.not.be.empty();
         request.payload.test[0].code = '';
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include(defaults.errors.code);
-
-          done();
-        });
+        Code.expect(response.result).to.include(defaults.errors.code);
       });
 
-      lab.test('generic error', function (done) {
+      lab.test('test with blank title and blank code is dropped', async () => {
+        sinon.stub(server.plugins['services/pages'], 'checkIfSlugAvailable').resolves(true);
+        const create = sinon.stub(server.plugins['services/pages'], 'create').resolves(1);
+        request.payload.test.push({ title: '', code: '' });
+
+        const response = await server.inject(request);
+
+        Code.expect(response.statusCode).to.equal(302);
+        Code.expect(create.firstCall.args[0].test[2].title).to.equal(defaults.deleteMe);
+      });
+
+      lab.test('generic error', async function () {
         request.payload.test[0].defer = 'unexpected';
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include('Please review required fields and save again.');
-
-          done();
-        });
+        Code.expect(response.result).to.include('Please review required fields and save again.');
       });
     });
 
     lab.experiment('authorization', function () {
-      lab.test('401 if attempting to POST without authorization', function (done) {
-        delete request.credentials;
+      lab.test('401 if attempting to POST without authorization', async function () {
+        delete request.auth;
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(401);
-
-          done();
-        });
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(401);
       });
     });
 
     lab.experiment('slug check', function () {
-      lab.test('handles error', function (done) {
+      lab.test('handles error', async function () {
         const errMsg = 'testing-very-unique-msg';
         sinon.stub(server.plugins['services/pages'], 'checkIfSlugAvailable').returns(Promise.resolve(true));
         sinon.stub(server.plugins['services/pages'], 'create').throws(new Error(errMsg));
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include(errMsg);
-
-          done();
-        });
+        Code.expect(response.result).to.include(errMsg);
       });
 
-      lab.test('not available', function (done) {
+      lab.test('not available', async function () {
         sinon.stub(server.plugins['services/pages'], 'checkIfSlugAvailable').returns(Promise.resolve(false));
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include('This slug is already in use. Please choose another one.');
-
-          done();
-        });
+        Code.expect(response.result).to.include('This slug is already in use. Please choose another one.');
       });
     });
 
     lab.experiment('create page', function () {
-      lab.beforeEach(function (done) {
+      lab.beforeEach(async function () {
         sinon.stub(server.plugins['services/pages'], 'checkIfSlugAvailable').returns(Promise.resolve(true));
-
-        done();
       });
 
-      lab.test('handles error', function (done) {
-        var errMsg = 'testing-very-very-unique-msg';
+      lab.test('handles error', async function () {
+        const errMsg = 'testing-very-very-unique-msg';
         sinon.stub(server.plugins['services/pages'], 'create').throws(new Error(errMsg));
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(400);
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(400);
 
-          Code.expect(response.result).to.include(errMsg);
-
-          done();
-        });
+        Code.expect(response.result).to.include(errMsg);
       });
 
-      lab.test('redirects to slug', function (done) {
+      lab.test('redirects to slug', async function () {
         sinon.stub(server.plugins['services/pages'], 'create').returns(Promise.resolve(true));
 
-        server.inject(request, function (response) {
-          Code.expect(response.statusCode).to.equal(302);
-          Code.expect(response.headers.location).to.include(request.payload.slug);
-
-          done();
-        });
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(302);
+        Code.expect(response.headers.location).to.include(request.payload.slug);
       });
 
-      lab.test('sets own in session', (done) => {
-        sinon.stub(server.plugins['services/pages'], 'create').returns(Promise.resolve(true));
+      lab.test('records the creator as the owner and author', async () => {
+        const create = sinon.stub(server.plugins['services/pages'], 'create').returns(Promise.resolve(5));
+        request.auth.credentials.id = 12;
 
-        server.route({
-          method: 'GET',
-          path: '/setsession',
-          config: {
-            handler: function (req, reply) {
-              req.yar.set('own', { 2: true });
-              return reply('session set');
-            }
-          }
-        });
-
-        server.inject('/setsession', function (res) {
-          var header = res.headers['set-cookie'];
-          var cookie = header[0].match(/(?:[^\x00-\x20\(\)<>@\,;\:\\'\/\[\]\?\=\{\}\x7F]+)\s*=\s*(?:([^\x00-\x20\'\,\;\\\x7F]*))/); // eslint-disable-line no-control-regex, no-useless-escape
-          request.headers = {};
-          request.headers.cookie = 'session=' + cookie[1];
-
-          server.inject(request, function (response) {
-            Code.expect(response.statusCode).to.equal(302);
-            Code.expect(response.headers.location).to.include(request.payload.slug);
-
-            // could inspect cookie to see `own` was expanded
-
-            done();
-          });
-        });
+        const response = await server.inject(request);
+        Code.expect(response.statusCode).to.equal(302);
+        Code.expect(create.args[0][0].userID).to.equal(12);
+        Code.expect(create.args[0][0].author).to.equal('koolaidman');
       });
     });
   });

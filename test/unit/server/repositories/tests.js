@@ -1,21 +1,14 @@
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../support/server');
 const sinon = require('sinon');
-const Hoek = require('hoek');
+const Hoek = require('@hapi/hoek');
 const defaults = require('../../../../server/lib/defaults');
 
-const MockDb = {
-  register: (server, options, next) => {
-    server.expose('escape', (val) => '`' + val + '`');
-    server.expose('genericQuery', function () {});
-    next();
-  }
-};
-
-MockDb.register.attributes = {
-  name: 'db'
-};
+const MockDb = Support.mock('db', {
+  escape: (val) => '`' + val + '`',
+  genericQuery: () => {}
+});
 
 const TestsRepo = require('../../../../server/repositories/tests');
 
@@ -24,39 +17,25 @@ const lab = exports.lab = Lab.script();
 lab.experiment('Tests Repository', function () {
   let server, tests, genericQueryStub;
 
-  lab.before((done) => {
-    server = new Hapi.Server();
+  lab.before(async () => {
+    server = await Support.createServer({ views: false, plugins: [MockDb, TestsRepo] });
 
-    server.connection();
-
-    server.register([
-      MockDb,
-      TestsRepo
-    ], (err) => {
-      if (err) return done(err);
-
-      tests = server.plugins['repositories/tests'];
-      done();
-    });
+    tests = server.plugins['repositories/tests'];
   });
 
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     genericQueryStub = sinon.stub(server.plugins.db, 'genericQuery');
-
-    done();
   });
 
-  lab.afterEach((done) => {
+  lab.afterEach(async () => {
     genericQueryStub.restore();
-
-    done();
   });
 
   lab.experiment('bulkCreate', function () {
-    var pageID;
-    var t;
+    let pageID;
+    let t;
 
-    lab.before(function (done) {
+    lab.before(async function () {
       t = [
         {
           title: 't1',
@@ -70,62 +49,55 @@ lab.experiment('Tests Repository', function () {
       ];
 
       pageID = 1;
-
-      done();
     });
 
-    lab.test('inserts multiple values', function (done) {
+    lab.test('inserts multiple values', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: t.length }));
 
-      tests.bulkCreate(pageID, t)
-        .then(function () {
-          Code.expect(
-            genericQueryStub.calledWithExactly(
-              'INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`), (1, `t2`, `n`, `a = 2`)',
-              [
-                'tests',
-                ['pageID', 'title', 'defer', 'code']
-              ]
-            )
-          ).to.be.true();
-
-          done();
-        });
+      await tests.bulkCreate(pageID, t);
+      Code.expect(
+        genericQueryStub.calledWithExactly(
+          'INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`, NULL), (`1`, `t2`, `n`, `a = 2`, NULL)',
+          [
+            'tests',
+            ['pageID', 'title', 'defer', 'code', 'complexity']
+          ]
+        )
+      ).to.be.true();
     });
 
-    lab.test('returns an error when not enough rows inserted', function (done) {
+    lab.test('stores the complexity estimate as JSON', async function () {
+      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
+
+      await tests.bulkCreate(pageID, [{ title: 't1', defer: 'n', code: 'a = 1', complexity: { estimate: true, overall: 'o1', calls: [] } }]);
+      Code.expect(genericQueryStub.getCall(0).args[0]).to.equal('INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`, `{"estimate":true,"overall":"o1","calls":[]}`)');
+    });
+
+    lab.test('returns an error when not enough rows inserted', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: t.length - 1 }));
 
-      tests.bulkCreate(pageID, t)
-        .catch(function (err) {
-          Code.expect(err).to.be.instanceof(Error);
-          Code.expect(err.message).to.equal('Not all tests inserted');
-
-          done();
-        });
+      const err = await Code.expect(tests.bulkCreate(pageID, t)).to.reject();
+      Code.expect(err).to.be.instanceof(Error);
+      Code.expect(err.message).to.equal('Not all tests inserted');
     });
 
-    lab.test('returns an error when not enough rows inserted', function (done) {
-      var testErrMsg = 'testing';
-      var testErr = new Error(testErrMsg);
+    lab.test('returns an error when not enough rows inserted', async function () {
+      const testErrMsg = 'testing';
+      const testErr = new Error(testErrMsg);
 
       genericQueryStub.returns(Promise.reject(testErr));
 
-      tests.bulkCreate(pageID, t)
-        .catch(function (err) {
-          Code.expect(err).to.be.instanceof(Error);
-          Code.expect(err.message).to.equal(testErrMsg);
-
-          done();
-        });
+      const err = await Code.expect(tests.bulkCreate(pageID, t)).to.reject();
+      Code.expect(err).to.be.instanceof(Error);
+      Code.expect(err.message).to.equal(testErrMsg);
     });
   });
 
   lab.experiment('bulkUpdate', function () {
-    var pageID;
-    var t;
+    let pageID;
+    let t;
 
-    lab.before(function (done) {
+    lab.before(async function () {
       t = [
         {
           title: 't1',
@@ -139,74 +111,71 @@ lab.experiment('Tests Repository', function () {
       ];
 
       pageID = 1;
-
-      done();
     });
 
-    lab.test('inserts multiple values', function (done) {
+    lab.test('inserts multiple values', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
 
-      tests.bulkUpdate(pageID, t, false)
-        .then(results => {
-          let call1 = genericQueryStub.getCall(0).args;
-          call1 = Hoek.flatten(call1).join(',');
+      await tests.bulkUpdate(pageID, t, false);
+      let call1 = genericQueryStub.getCall(0).args;
+      call1 = Hoek.flatten(call1).join(',');
 
-          Code.expect(call1).to.equal('INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`),tests,pageID,title,defer,code');
-          done();
-        });
+      Code.expect(call1).to.equal('INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?),tests,pageID,title,defer,code,complexity,1,t1,n,a = 1,');
     });
 
-    lab.test('returns the result of each update', function (done) {
+    lab.test('updates and inserts the complexity estimate', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
+      const estimate = { overall: 'on', calls: [] };
+      const json = '{"overall":"on","calls":[]}';
 
-      tests.bulkUpdate(pageID, t, false)
-        .then(results => {
-          Code.expect(results[0].affectedRows).to.equal(1);
-          Code.expect(results[1].affectedRows).to.equal(1);
+      await tests.bulkUpdate(pageID, [
+        { testID: 5, title: 't1', defer: 'n', code: 'a = 1', complexity: estimate },
+        { title: 't2', defer: 'n', code: 'a = 2', complexity: estimate }
+      ], true);
 
-          done();
-        });
+      Code.expect(genericQueryStub.getCall(0).args).to.equal(['UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?', ['tests', 't1', 'n', 'a = 1', json, 1, 5]]);
+      Code.expect(genericQueryStub.getCall(1).args).to.equal(['INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)', ['tests', ['pageID', 'title', 'defer', 'code', 'complexity'], 1, 't2', 'n', 'a = 2', json]]);
     });
 
-    lab.test('updates test if it is an existing test and the same owner', function (done) {
+    lab.test('returns the result of each update', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-      let tClone = Hoek.clone(t);
+
+      const results = await tests.bulkUpdate(pageID, t, false);
+      Code.expect(results[0].affectedRows).to.equal(1);
+      Code.expect(results[1].affectedRows).to.equal(1);
+    });
+
+    lab.test('updates test if it is an existing test and the same owner', async function () {
+      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
+      const tClone = Hoek.clone(t);
       tClone[0].testID = 123;
       tClone[1].testID = 321;
-      tests.bulkUpdate(pageID, tClone, true)
-        .then(results => {
-          const call1 = genericQueryStub.getCall(0).args;
-          const call2 = genericQueryStub.getCall(1).args;
+      await tests.bulkUpdate(pageID, tClone, true);
+      const call1 = genericQueryStub.getCall(0).args;
+      const call2 = genericQueryStub.getCall(1).args;
 
-          Code.expect(call2[0]).to.equal('UPDATE ?? SET title = `t2`, defer =  `n` , code =  `a = 2` WHERE pageID = 1 AND testID = 321');
-          Code.expect(call2[1]).to.equal(['tests']);
-          Code.expect(call1[0]).to.equal('UPDATE ?? SET title = `t1`, defer =  `n` , code =  `a = 1` WHERE pageID = 1 AND testID = 123');
-          Code.expect(call1[1]).to.equal(['tests']);
-          done();
-        });
+      const sql = 'UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?';
+      Code.expect(call2).to.equal([sql, ['tests', 't2', 'n', 'a = 2', null, 1, 321]]);
+      Code.expect(call1).to.equal([sql, ['tests', 't1', 'n', 'a = 1', null, 1, 123]]);
     });
 
-    lab.test('inserts new test if user is not the original owner', function (done) {
+    lab.test('inserts new test if user is not the original owner', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-      let tClone = Hoek.clone(t);
+      const tClone = Hoek.clone(t);
       tClone[0].testID = 123;
       tClone[1].testID = 321;
-      tests.bulkUpdate(pageID, tClone, false)
-        .then(results => {
-          const call1 = genericQueryStub.getCall(0).args;
-          const call2 = genericQueryStub.getCall(1).args;
-          Code.expect(call2[0]).to.equal('INSERT INTO ?? (??) VALUES (1, `t2`, `n`, `a = 2`)');
-          Code.expect(call2[1]).to.equal([ 'tests', [ 'pageID', 'title', 'defer', 'code' ] ]);
-
-          Code.expect(call1[0]).to.equal('INSERT INTO ?? (??) VALUES (1, `t1`, `n`, `a = 1`)');
-          Code.expect(call1[1]).to.equal([ 'tests', [ 'pageID', 'title', 'defer', 'code' ] ]);
-          done();
-        });
+      await tests.bulkUpdate(pageID, tClone, false);
+      const call1 = genericQueryStub.getCall(0).args;
+      const call2 = genericQueryStub.getCall(1).args;
+      const sql = 'INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)';
+      const columns = ['pageID', 'title', 'defer', 'code', 'complexity'];
+      Code.expect(call2).to.equal([sql, ['tests', columns, 1, 't2', 'n', 'a = 2', null]]);
+      Code.expect(call1).to.equal([sql, ['tests', columns, 1, 't1', 'n', 'a = 1', null]]);
     });
 
-    lab.test('deletes existing test if no title and no code', function (done) {
+    lab.test('deletes existing test if no title and no code', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-      let tClone = Hoek.clone(t);
+      const tClone = Hoek.clone(t);
       tClone[0].testID = 123;
       tClone[1].testID = 321;
       tClone[0].code = defaults.deleteMe;
@@ -214,41 +183,50 @@ lab.experiment('Tests Repository', function () {
       tClone[1].code = defaults.deleteMe;
       tClone[1].title = defaults.deleteMe;
 
-      tests.bulkUpdate(pageID, tClone, true)
-        .then(results => {
-          let call1 = genericQueryStub.getCall(0).args;
-          let call2 = genericQueryStub.getCall(1).args;
+      await tests.bulkUpdate(pageID, tClone, true);
+      const call1 = genericQueryStub.getCall(0).args;
+      const call2 = genericQueryStub.getCall(1).args;
 
-          Code.expect(call1[0]).to.equal('DELETE FROM ?? WHERE pageID = 1 AND testID = 123');
-          Code.expect(call1[1]).to.equal(['tests']);
-          Code.expect(call2[0]).to.equal('DELETE FROM ?? WHERE pageID = 1 AND testID = 321');
-          Code.expect(call2[1]).to.equal(['tests']);
-
-          done();
-        });
+      const sql = 'DELETE FROM ?? WHERE pageID = ? AND testID = ?';
+      Code.expect(call1).to.equal([sql, ['tests', 1, 123]]);
+      Code.expect(call2).to.equal([sql, ['tests', 1, 321]]);
     });
 
-    lab.test('does nothing if no title and no code with no test id', function (done) {
+    lab.test('keeps a test that only has a blank title', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-      let tClone = Hoek.clone(t);
+      const tClone = Hoek.clone(t);
+      tClone[0].title = defaults.deleteMe;
+
+      await tests.bulkUpdate(pageID, tClone, true);
+
+      Code.expect(genericQueryStub.getCall(0).args[0]).to.startWith('INSERT INTO');
+    });
+
+    lab.test('inserts new tests added by the owner', async function () {
+      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
+
+      await tests.bulkUpdate(pageID, Hoek.clone(t), true);
+
+      Code.expect(genericQueryStub.getCall(0).args[0]).to.startWith('INSERT INTO');
+    });
+
+    lab.test('does nothing if no title and no code with no test id', async function () {
+      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
+      const tClone = Hoek.clone(t);
       tClone[0].code = defaults.deleteMe;
       tClone[0].title = defaults.deleteMe;
       tClone[1].code = defaults.deleteMe;
       tClone[1].title = defaults.deleteMe;
 
-      tests.bulkUpdate(pageID, tClone, true)
-        .then(results => {
-          let call1 = genericQueryStub.getCall(0);
+      await tests.bulkUpdate(pageID, tClone, true);
+      const call1 = genericQueryStub.getCall(0);
 
-          Code.expect(call1).to.equal(null);
-
-          done();
-        });
+      Code.expect(call1).to.equal(null);
     });
 
-    lab.test('does nothing if no title and no code with no ownership', function (done) {
+    lab.test('does nothing if no title and no code with no ownership', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-      let tClone = Hoek.clone(t);
+      const tClone = Hoek.clone(t);
       tClone[0].testID = 123;
       tClone[1].testID = 321;
       tClone[0].code = defaults.deleteMe;
@@ -256,44 +234,42 @@ lab.experiment('Tests Repository', function () {
       tClone[1].code = defaults.deleteMe;
       tClone[1].title = defaults.deleteMe;
 
-      tests.bulkUpdate(pageID, tClone, false)
-        .then(results => {
-          let call1 = genericQueryStub.getCall(0);
+      await tests.bulkUpdate(pageID, tClone, false);
+      const call1 = genericQueryStub.getCall(0);
 
-          Code.expect(call1).to.equal(null);
-
-          done();
-        });
+      Code.expect(call1).to.equal(null);
     });
 
-    lab.test('returns an error when not enough rows inserted', function (done) {
+    lab.test('returns an error when not enough rows inserted', async function () {
       genericQueryStub.returns(Promise.resolve({ affectedRows: 0 }));
 
-      tests.bulkUpdate(pageID, t, false)
-        .catch(err => {
-          Code.expect(err).to.be.instanceof(Error);
-          Code.expect(err.message).to.equal('Not all tests inserted');
-          done();
-        });
+      const err = await Code.expect(tests.bulkUpdate(pageID, t, false)).to.reject();
+      Code.expect(err).to.be.instanceof(Error);
+      Code.expect(err.message).to.equal('Not all tests inserted');
+    });
+  });
+
+  lab.experiment('setComplexity', function () {
+    lab.test('stores the estimate for one test', async function () {
+      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
+
+      await tests.setComplexity(7, { overall: 'o1', calls: [] });
+      Code.expect(genericQueryStub.calledWithExactly('UPDATE ?? SET complexity = ? WHERE testID = ?', ['tests', '{"overall":"o1","calls":[]}', 7])).to.be.true();
     });
   });
 
   lab.experiment('findByPageID', function () {
-    lab.test('selects all from tests where pageID', function (done) {
-      var pageID = 1;
+    lab.test('selects all from tests where pageID', async function () {
+      const pageID = 1;
       genericQueryStub.returns(Promise.resolve([]));
 
-      tests.findByPageID(pageID)
-        .then(function () {
-          Code.expect(
-            genericQueryStub.calledWithExactly(
-              'SELECT * FROM ?? WHERE pageID = ?',
-              ['tests', pageID]
-            )
-          ).to.be.true();
-
-          done();
-        });
+      await tests.findByPageID(pageID);
+      Code.expect(
+        genericQueryStub.calledWithExactly(
+          'SELECT * FROM ?? WHERE pageID = ?',
+          ['tests', pageID]
+        )
+      ).to.be.true();
     });
   });
 });

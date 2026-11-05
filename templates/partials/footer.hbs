@@ -3,30 +3,23 @@
   <footer>
     <ul>
       <li>
-        <h4>Sponsors</h4>
-        <p>Hosting generously provided by <a href="https://m.do.co/c/b426e15331e8">DigitalOcean</a> and <a href="https://zeit.co/">Zeit</a></p>
-
-        <p><a href="/sponsor">Learn how to become a sponsor</a></p>
-      </li>
-
-      <li>
         <h4>Tests</h4>
         <ul>
           <li>
-            <a href="/">Add</a>
+            <a href="{{@root.base}}/">Add</a>
           </li>
 
           {{#if credentials}}
             <li>
-              <a href="/browse/{{credentials.username}}">My tests</a>
+              <a href="{{@root.base}}/browse/{{credentials.username}}">My tests</a>
             </li>
           {{/if}}
 
           <li>
-            <a href="/browse">Latest</a>
+            <a href="{{@root.base}}/browse">Latest</a>
           </li>
           <li>
-            <a href="/popular">Popular</a>
+            <a href="{{@root.base}}/popular">Popular</a>
           </li>
         </ul>
       </li>
@@ -35,13 +28,10 @@
         <h4>Info</h4>
         <ul>
           <li>
-            <a href="/faq">FAQ</a>
+            <a href="{{@root.base}}/faq">FAQ</a>
           </li>
           <li>
-            <a href="/testimonials">Testimonials</a>
-          </li>
-          <li>
-            <a href="/contributors">Contributors</a>
+            <a href="{{@root.base}}/contributors">Contributors</a>
           </li>
           <li>
             <a href="https://benchmarkjs.com/">Benchmark.js</a>
@@ -53,13 +43,7 @@
         <h4>Contact</h4>
         <ul>
           <li>
-            <a href="https://twitter.com/jsperf">Twitter</a>
-          </li>
-          <li>
-            <a href="https://github.com/jsperf/jsperf.com">GitHub</a>
-          </li>
-          <li>
-            <a href="https://webchat.freenode.net/?channels=jsperf">IRC</a>
+            <a href="https://github.com/FesterCluck/jsperf.com">GitHub</a>
           </li>
         </ul>
       </li>
@@ -67,45 +51,17 @@
   </footer>
 
   {{#if benchmark}}
-    <script src="/public/_js/test.js"></script>
-    <script>
-      {{#if page.browserscopeID}}
-        ui.browserscope.key = '{{ page.browserscopeID }}'
-      {{/if}}
-
-      {{#each page.test}}
-        ui.add(
-          {{{ cleanJsString title }}},
-          {
-            'defer': {{#compare defer "y" operator="==="}}true{{ else }}false{{/compare}},
-            'fn': {{{ cleanJsString code }}}
-          }
-        );
-      {{/each}}
-
-      {{#if page.setup}}
-        Benchmark.prototype.setup = {{{ cleanJsString page.setup }}}
-      {{/if}}
-      {{#if page.teardown}}
-        Benchmark.prototype.teardown = {{{ cleanJsString page.teardown }}}
-      {{/if}}
-    </script>
-
-    {{{ page.initHTML }}}
+    <script src="{{@root.base}}/public/_js/test.js"></script>
   {{else}}
     {{#if mainJS}}
-      <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.2/jquery.js"></script>
+      <script>window.jsPerfBase = '{{@root.base}}';</script>
+      <script src="{{@root.base}}/public/_vendor/jquery/jquery.min.js"></script>
 
       {{#if debug}}
-        <script src="/public/_js/main.src.js"></script>
+        <script src="{{@root.base}}/public/_js/main.src.js"></script>
       {{else}}
-        <script src="/public/_js/main.js"></script>
+        <script src="{{@root.base}}/public/_js/main.js"></script>
       {{/if}}
     {{/if}}
   {{/if}}
-
-  <script>
-    window._gaq=[['_setAccount','UA-6065217-40'],['_trackPageview']];
-    (function(d,t){var g=d.createElement(t),s=d.getElementsByTagName(t)[0];g.src='https://ssl.google-analytics.com/ga.js';s.parentNode.insertBefore(g,s)}(document,'script'))
-  </script>
 </body>

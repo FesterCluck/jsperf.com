@@ -1,30 +1,32 @@
-const Catbox = require('catbox');
-const CatboxRedis = require('catbox-redis');
+'use strict';
 
-exports.register = function (server, options, next) {
-  if (options.host && options.host.length > 0) {
-    server.log('info', 'connecting to redis cache');
-    const client = new Catbox.Client(CatboxRedis, {
-      partition: options.partition,
-      host: options.host,
-      port: options.port,
-      password: options.password
-    });
+const Catbox = require('@hapi/catbox');
+const CatboxRedis = require('@hapi/catbox-redis');
 
-    server.expose('get', client.get.bind(client));
-    server.expose('set', client.set.bind(client));
-    server.expose('drop', client.drop.bind(client));
+exports.plugin = {
+  name: 'cache',
+  register: async (server, options) => {
+    if (options.host) {
+      server.log('info', 'connecting to redis cache');
+      const client = new Catbox.Client(CatboxRedis.Engine, {
+        partition: options.partition,
+        host: options.host,
+        port: options.port,
+        password: options.password
+      });
 
-    client.start().then(next).catch(next);
-  } else {
-    server.log('info', 'no redis config provided. caching disabled');
-    server.expose('get', (key, callback) => { callback(null, null); });
-    server.expose('set', (key, value, ttl, callback) => { callback(null); });
-    server.expose('drop', () => {});
-    next();
+      server.expose('get', (key) => client.get(key));
+      server.expose('set', (key, value, ttl) => client.set(key, value, ttl));
+      server.expose('drop', (key) => client.drop(key));
+
+      server.ext('onPostStop', () => client.stop());
+
+      await client.start();
+    } else {
+      server.log('info', 'no redis config provided. caching disabled');
+      server.expose('get', async () => null);
+      server.expose('set', async () => {});
+      server.expose('drop', async () => {});
+    }
   }
-};
-
-exports.register.attributes = {
-  name: 'cache'
 };

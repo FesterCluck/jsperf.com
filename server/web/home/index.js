@@ -1,45 +1,45 @@
-const _assign = require('lodash.assign');
-const Joi = require('joi');
+'use strict';
+
+const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
 const schema = require('../../lib/schema');
 
-exports.register = function (server, options, next) {
+const register = (server) => {
   const pagesService = server.plugins['services/pages'];
 
   server.route({
     method: 'GET',
     path: '/',
-    config: {
+    options: {
       auth: {
         mode: 'try',
         strategy: 'session'
       }
     },
-    handler: function (request, reply) {
-      reply.view('home/index', _assign({}, defaults.testPageContext, {
-        home: true,
-        showAtom: {
-          slug: 'browse'
-        },
-        jsClass: true,
-        mainJS: true,
-        test: [defaults.test, defaults.test]
-      }));
-    }
+    handler: (request, h) => h.view('home/index', Object.assign({}, defaults.testPageContext, {
+      home: true,
+      showAtom: {
+        slug: 'browse'
+      },
+      jsClass: true,
+      mainJS: true,
+      test: [defaults.test, defaults.test]
+    }))
   });
 
   server.route({
     method: 'POST',
     path: '/',
-    config: {
+    options: {
       auth: 'session'
     },
-    handler: function (request, reply) {
-      var errResp = function (errObj) {
+    handler: async (request, h) => {
+      const errResp = (errObj) => {
         if (errObj.message) {
           errObj.genError = errObj.message;
         }
-        reply.view('home/index', _assign({}, defaults.testPageContext, request.payload, {
+
+        return h.view('home/index', Object.assign({}, defaults.testPageContext, request.payload, {
           home: true,
           showAtom: {
             slug: 'browse'
@@ -51,80 +51,72 @@ exports.register = function (server, options, next) {
 
       request.payload.authorGitHub = request.auth.credentials.username;
 
-      Joi.validate(request.payload, schema.testPage, function (er, pageWithTests) {
-        let errObj = {};
-        if (er) {
-          // `abortEarly` option defaults to `true` so can rely on 0 index
-          // but just in case...
-          try {
-            const valErr = er.details[0];
-
-            switch (valErr.path[0]) {
-              case 'title':
-                errObj.titleError = defaults.errors.title;
-                break;
-              case 'slug':
-                errObj.slugError = defaults.errors.slug;
-                break;
-              default:
-                throw new Error('unknown validation error');
-            }
-          } catch (ex) {
-            errObj.genError = defaults.errors.general;
+      const { error, value: pageWithTests } = schema.testPage.validate(request.payload);
+      if (error) {
+        const errObj = {};
+        // `abortEarly` option defaults to `true` so can rely on 0 index
+        // but just in case...
+        try {
+          switch (error.details[0].path[0]) {
+            case 'title':
+              errObj.titleError = defaults.errors.title;
+              break;
+            case 'slug':
+              errObj.slugError = defaults.errors.slug;
+              break;
+            default:
+              throw new Error('unknown validation error');
           }
-          errResp(errObj);
-        } else {
-          // additional validation that's not possible or insanely complex w/ Joi
-          let wasAdditionalValidationError = false;
-          pageWithTests.test.forEach((t, idx) => {
-            const missingTitle = t.title === defaults.deleteMe;
-            const missingCode = t.code === defaults.deleteMe;
+        } catch (ex) {
+          errObj.genError = defaults.errors.general;
+        }
 
-            if (missingTitle && !missingCode) {
-              wasAdditionalValidationError = true;
-              request.payload.test[idx].codeTitleError = defaults.errors.codeTitle;
-            }
+        return errResp(errObj);
+      }
 
-            if (missingCode && !missingTitle) {
-              wasAdditionalValidationError = true;
-              request.payload.test[idx].codeError = defaults.errors.code;
-            }
-          });
+      // additional validation that's not possible or insanely complex w/ Joi
+      let wasAdditionalValidationError = false;
+      pageWithTests.test.forEach((t, idx) => {
+        const missingTitle = t.title === defaults.deleteMe;
+        const missingCode = t.code === defaults.deleteMe;
 
-          if (wasAdditionalValidationError) {
-            errResp(errObj);
-          } else {
-            // Joi defaults any properties not present in `request.payload` so use `payload` from here on out
-            var payload = pageWithTests;
+        if (missingTitle && !missingCode) {
+          wasAdditionalValidationError = true;
+          request.payload.test[idx].codeTitleError = defaults.errors.codeTitle;
+        }
 
-            pagesService.checkIfSlugAvailable(server, payload.slug)
-              .then(isAvail => {
-                if (!isAvail) {
-                  errResp({
-                    slugError: defaults.errors.slugDupe
-                  });
-                } else {
-                  payload.author = request.auth.credentials.username;
-                  return pagesService.create(payload)
-                    .then(resultPageId => {
-                      const own = request.yar.get('own') || {};
-                      own[resultPageId] = true;
-                      request.yar.set('own', own);
-                      reply.redirect('/' + payload.slug);
-                    });
-                }
-              })
-              .catch(errResp);
-          }
+        if (missingCode && !missingTitle) {
+          wasAdditionalValidationError = true;
+          request.payload.test[idx].codeError = defaults.errors.code;
         }
       });
+
+      if (wasAdditionalValidationError) {
+        return errResp({});
+      }
+
+      // Joi defaults any properties not present in `request.payload` so use `payload` from here on out
+      const payload = pageWithTests;
+
+      try {
+        const isAvail = await pagesService.checkIfSlugAvailable(server, payload.slug);
+        if (!isAvail) {
+          return errResp({ slugError: defaults.errors.slugDupe });
+        }
+
+        payload.author = request.auth.credentials.username;
+        payload.userID = request.auth.credentials.id;
+        await pagesService.create(payload);
+        return h.redirect(basePath.url(request, `/${payload.slug}`));
+      } catch (err) {
+        return errResp(err);
+      }
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/home',
-  dependencies: ['services/pages']
+  dependencies: ['services/pages'],
+  register
 };

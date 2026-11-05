@@ -1,56 +1,44 @@
-var Lab = require('lab');
-var Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Hapi = require('@hapi/hapi');
 
-var StrategiesPlugin = {
-  register: require('../../../../../server/web/auth/strategies'),
+const StrategiesPlugin = {
+  plugin: require('../../../../../server/web/auth/strategies'),
   options: {
     session: {
-      password: 'testing',
+      password: 'password-should-be-32-characters',
       cookie: 'jsperf',
       isSecure: true
-    },
-    oauth: {
-      password: 'test1',
-      clientId: 'fromGH',
-      clientSecret: 's3cr3t',
-      isSecure: true,
-      location: 'http://localhost'
     }
   }
 };
 
-var lab = exports.lab = Lab.script();
-var server;
+const lab = exports.lab = Lab.script();
 
-lab.experiment('strategies', function () {
-  lab.test('registers auth strategies', function (done) {
-    server = new Hapi.Server();
+lab.experiment('strategies', () => {
+  lab.test('registers auth strategies', async () => {
+    const server = Hapi.server();
 
-    server.connection();
+    await server.register([require('@hapi/cookie'), StrategiesPlugin]);
 
-    server.register([
-      require('hapi-auth-cookie'),
-      require('bell'),
-      StrategiesPlugin
-    ], function (err) {
-      if (err) {
-        return done(err);
-      }
+    server.route({ method: 'GET', path: '/private', options: { auth: 'session' }, handler: () => 'secret' });
 
-      server.route({
-        method: 'GET',
-        path: '/test-auth',
-        config: {
-          auth: 'github',
-          handler: function (request, reply) {
-            return reply(request.auth.credentials);
-          }
-        }
-      });
+    const res = await server.inject('/private');
+    Code.expect(res.statusCode).to.equal(401);
 
-      server.inject({ method: 'GET', url: '/test-auth' }, function () {
-        done();
-      });
-    });
+    const ok = await server.inject({ url: '/private', auth: { strategy: 'session', credentials: { username: 'a' } } });
+    Code.expect(ok.statusCode).to.equal(200);
+  });
+
+  lab.test('scopes the session cookie to the configured path', async () => {
+    const server = Hapi.server();
+
+    await server.register([require('@hapi/cookie'), { plugin: StrategiesPlugin.plugin, options: { session: { ...StrategiesPlugin.options.session, path: '/next' } } }]);
+    server.route({ method: 'GET', path: '/login', options: { auth: 'session' }, handler: (request, h) => { request.cookieAuth.set({ id: 1 }); return 'ok'; } });
+    server.route({ method: 'GET', path: '/set', options: { auth: { strategy: 'session', mode: 'try' } }, handler: (request) => { request.cookieAuth.set({ id: 1 }); return 'ok'; } });
+
+    const res = await server.inject('/set');
+    Code.expect(res.headers['set-cookie'][0]).to.contain('Path=/next');
+    Code.expect(res.headers['set-cookie'][0]).to.startWith('jsperf=');
   });
 });

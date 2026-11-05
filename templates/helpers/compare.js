@@ -1,15 +1,15 @@
 const relativeDate = require('./relativeDate');
 
 module.exports = function (left, right, options) {
-  var operator = options.hash.operator || '<';
+  const operator = options.hash.operator || '<';
 
-  var operators = {
+  const operators = {
     '<': (l, r) => l < r,
     '===': (l, r) => l === r,
-    'includes': (l, r) => l.indexOf(r) !== -1,
-    'diffRelativeDate': (l, r) => relativeDate(l) !== relativeDate(r),
-    'isOwner': (l, r) => {
-      var isOwner = false;
+    includes: (l, r) => l.indexOf(r) !== -1,
+    diffRelativeDate: (l, r) => relativeDate(l) !== relativeDate(r),
+    isOwner: (l, r) => {
+      let isOwner = false;
       if (l.author === r.author && l.authorEmail === r.authorEmail && l.authorURL === r.authorURL) {
         // r will most likely be a comment on a test page
         isOwner = r.isOwner = true;

@@ -1,14 +1,12 @@
-var Lab = require('lab');
-var Code = require('code');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
 
-var indent = require('../../../../templates/helpers/indent');
+const indent = require('../../../../templates/helpers/indent');
 
-var lab = exports.lab = Lab.script();
+const lab = exports.lab = Lab.script();
 
 lab.experiment('Template Helper indent', function () {
-  lab.test('indents each new line two spaces', function (done) {
+  lab.test('indents each new line two spaces', async function () {
     Code.expect(indent('some\nplain\ntext')).to.equal('  some\n  plain\n  text');
-
-    done();
   });
 });

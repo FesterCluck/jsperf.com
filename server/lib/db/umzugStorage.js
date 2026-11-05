@@ -1,38 +1,31 @@
 const table = 'migrations';
 
+// umzug 3 storage: methods receive objects ({ name, path, context })
 class CustomStorage {
   constructor (options) {
     this.genericQuery = options.genericQuery;
   }
 
-  logMigration (migrationName) {
-    // This function logs a migration as executed.
-    // It will get called once a migration was
-    // executed successfully.
-    return this.genericQuery('INSERT INTO ?? SET ?', [ table, { name: migrationName } ]);
+  async logMigration ({ name }) {
+    await this.genericQuery('INSERT INTO ?? SET ?', [table, { name }]);
   }
 
-  unlogMigration (migrationName) {
-    // This function removes a previously logged migration.
-    // It will get called once a migration has been reverted.
-    return this.genericQuery('DELETE FROM ?? WHERE `name` = ? LIMIT 1;', [ table, migrationName ]);
+  async unlogMigration ({ name }) {
+    await this.genericQuery('DELETE FROM ?? WHERE `name` = ? LIMIT 1;', [table, name]);
   }
 
-  executed () {
-    // This function lists the names of the logged
-    // migrations. It will be used to calculate
-    // pending migrations. The result has to be an
-    // array with the names of the migration files.
-    return this.genericQuery('SELECT name FROM ?? ORDER BY id ASC;', [ table ])
-      .then((rows) => rows.map((r) => r.name))
-      .catch((err) => {
-        if (err.code === 'ER_NO_SUCH_TABLE') {
+  async executed () {
+    try {
+      const rows = await this.genericQuery('SELECT name FROM ?? ORDER BY id ASC;', [table]);
+      return rows.map((r) => r.name);
+    } catch (err) {
+      if (err.code === 'ER_NO_SUCH_TABLE') {
         // first run
-          return [];
-        }
+        return [];
+      }
 
-        throw err;
-      });
+      throw err;
+    }
   }
 }
 

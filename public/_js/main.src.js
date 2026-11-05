@@ -59,7 +59,7 @@ $(function() {
 	    $initHTML = $('#initHTML'),
 	    $prepJS = $('#setup'),
 	    $jsFields = $prepJS.add('#setup, #teardown'),
-	    testHTML = '<h4>Code snippet 1</h4><div><label for="test[1][title]">Title <em title="This field is required">*</em> </label><input type="text" name="test[1][title]" id="test[1][title]"></div><div><label for="test[1][defer]">Async </label><label class="inline"><input type="checkbox" value="y" name="test[1][defer]" id="test[1][defer]"> (check if this is an <a href="/faq#async">asynchronous test</a>)</label></div><div><label for="test[1][code]">Code <em title="This field is required">*</em> </label><textarea name="test[1][code]" class="code-js" id="test[1][code]" maxlength="16777215"></textarea></div></fieldset>',
+	    testHTML = '<h4>Code snippet 1</h4><div><label for="test[1][title]">Title <em title="This field is required">*</em> </label><input type="text" name="test[1][title]" id="test[1][title]"></div><div><label for="test[1][defer]">Async </label><label class="inline"><input type="checkbox" value="y" name="test[1][defer]" id="test[1][defer]"> (check if this is an <a href="' + (window.jsPerfBase || "") + '/faq#async">asynchronous test</a>)</label></div><div><label for="test[1][code]">Code <em title="This field is required">*</em> </label><textarea name="test[1][code]" class="code-js" id="test[1][code]" maxlength="16777215"></textarea></div></fieldset>',
 	    testCount = $('fieldset', $tests).length,
 	    $addTest = $('<button id="add-test" title="Add another code snippet to the test case">Add code snippet</button>').insertBefore('.submit'),
 	    $addjQuery = $('<button id="add-jquery" title="jQuery v1.x">jQuery</button>').addScript('jquery/1/jquery.min'),
@@ -78,7 +78,8 @@ $(function() {
 	}
 
 	$addTest.click(function(event) {
-		$(testHTML.replace(/1/g, ++testCount)).appendTo($tests);
+		var index = testCount++;
+		$(testHTML.replace(/test\[1\]/g, 'test[' + index + ']').replace('Code snippet 1', 'Code snippet ' + (index + 1))).appendTo($tests);
 		event.preventDefault();
 	});
 

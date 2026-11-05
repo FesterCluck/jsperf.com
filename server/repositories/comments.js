@@ -1,7 +1,9 @@
+'use strict';
+
 const name = 'repositories/comments';
 const table = 'comments';
 
-exports.register = function (server, options, next) {
+const register = (server, options) => {
   server.expose('findByPageID', function (pageID) {
     server.log(['debug'], `${name}::findByPageID: ${JSON.stringify(arguments)}`);
 
@@ -17,17 +19,10 @@ exports.register = function (server, options, next) {
     return server.plugins.db.genericQuery('INSERT INTO ?? SET ?', [table, payload])
       .then(result => result.insertId);
   });
-
-  server.expose('delete', function (commentId) {
-    server.log(['debug'], `${name}::delete: ${JSON.stringify(arguments)}`);
-
-    return server.plugins.db.genericQuery('DELETE FROM ?? WHERE id = ?', [table, commentId]);
-  });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name,
-  dependencies: ['db']
+  dependencies: ['db'],
+  register
 };

@@ -1,26 +1,25 @@
-exports.register = function (server, options, next) {
+'use strict';
+
+const register = (server) => {
   const pagesService = server.plugins['services/pages'];
+
   server.route({
     method: 'GET',
     path: '/popular',
-    handler: function (request, reply) {
-      pagesService.getPopular()
-        .then(function (popular) {
-          reply.view('popular/index', {
-            headTitle: 'Popular test cases',
-            admin: false,
-            recent: popular.recent,
-            allTime: popular.allTime
-          });
-        })
-        .catch(reply);
+    handler: async (request, h) => {
+      const popular = await pagesService.getPopular();
+
+      return h.view('popular/index', {
+        headTitle: 'Popular test cases',
+        recent: popular.recent,
+        allTime: popular.allTime
+      });
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/popular',
-  dependencies: ['services/pages']
+  dependencies: ['services/pages'],
+  register
 };

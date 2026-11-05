@@ -1,20 +1,16 @@
-exports.register = function (server, options, next) {
-  server.route({
-    method: 'GET',
-    path: '/health',
-    handler: function (request, reply) {
-      server.plugins.db.genericQuery('SELECT 1;')
-        .then(function () {
-          reply();
-        })
-        .catch(reply);
-    }
-  });
+'use strict';
 
-  return next();
-};
-
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/health',
-  dependencies: ['db']
+  dependencies: ['db'],
+  register: (server) => {
+    server.route({
+      method: 'GET',
+      path: '/health',
+      handler: async (request, h) => {
+        await server.plugins.db.genericQuery('SELECT 1;');
+        return h.response().code(200);
+      }
+    });
+  }
 };

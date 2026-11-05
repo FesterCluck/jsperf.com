@@ -1,0 +1,17 @@
+<h1>Log in</h1>
+{{#if genError}}<p class="error">{{genError}}</p>{{/if}}
+<form action="{{@root.base}}/login" method="post">
+  <input type="hidden" name="crumb" value="{{crumb}}">
+  <div>
+    <label for="username">Username </label>
+    <input type="text" name="username" id="username" required autocomplete="username" value="{{username}}">
+  </div>
+  <div>
+    <label for="password">Password </label>
+    <input type="password" name="password" id="password" required autocomplete="current-password">
+  </div>
+  <div class="buttons">
+    <input type="submit" class="submit" value="Log in">
+  </div>
+</form>
+<p>No account yet? <a href="{{@root.base}}/register">Register</a>.</p>

@@ -1,52 +1,68 @@
-const Boom = require('boom');
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const Boom = require('@hapi/boom');
 const hljs = require('highlight.js');
 const regex = require('../../lib/regex');
-const Joi = require('joi');
+const ownership = require('../../lib/ownership');
 const schema = require('../../lib/schema');
+const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
+const complexity = require('../../lib/complexity');
+const userAgent = require('../../lib/userAgent');
+const clientIp = require('../../lib/clientIp');
 
-exports.register = function (server, options, next) {
+// The runner is inlined into the frame document: the frame has an opaque origin, so a separate request for it
+// would be a cold, uncached connection that can fail independently of the page.
+let runner;
+const getRunner = () => {
+  runner = runner || fs.readFileSync(path.join(__dirname, '../../../public/_js/frame.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
+  return runner;
+};
+
+const register = (server, options) => {
   const pagesService = server.plugins['services/pages'];
   const commentsService = server.plugins['services/comments'];
 
   const getTestPage = (request) => {
     return pagesService.getBySlug(request.params.testSlug, request.params.rev || 1)
       .then(values => {
-        var page = values[0];
-        page.test = values[1];
+        const page = values[0];
+        page.test = values[1].map((test) => Object.assign({}, test, { complexityView: complexity.present(test.complexity, userAgent.engine(request.headers['user-agent'])) }));
         page.revisions = values[2];
         page.comments = values[3];
 
         const hasSetupOrTeardown = page.setup.length || page.teardown.length;
         const hasPrep = page.initHTML.length || hasSetupOrTeardown;
 
-        var stripped = false;
+        let stripped = false;
 
         if (hasPrep) {
           const reScripts = new RegExp(regex.script, 'gi');
           stripped = page.initHTML.replace(reScripts, '');
 
-          var swappedScripts = [];
+          const swappedScripts = [];
 
           // highlight the JS inside HTML while highlighting the HTML
-          page.initHTMLHighlighted = hljs.highlight('html',
+          page.initHTMLHighlighted = hljs.highlight(
             page.initHTML.replace(
               reScripts,
               function (match, open, contents, close) {
                 // highlight JS inside script tags
-                var highlightedContents = hljs.highlight('js', contents, true).value;
+                const highlightedContents = hljs.highlight(contents, { language: 'javascript', ignoreIllegals: true }).value;
                 // store to put back in place later
                 swappedScripts.unshift(highlightedContents.replace(/&nbsp;$/, ''));
                 // insert marker to replace shortly
                 return open + '@jsPerfTagToken' + close;
               }
             ),
-            true
+            { language: 'html', ignoreIllegals: true }
           ).value.replace(/@jsPerfTagToken/g, () => swappedScripts.pop());
         }
 
         // update hits once per page per session
-        var hits = request.yar.get('hits') || {};
+        const hits = request.yar.get('hits') || {};
         if (!hits[page.id]) {
           pagesService.updateHits(page.id)
             .then(function () {
@@ -58,25 +74,23 @@ exports.register = function (server, options, next) {
             });
         }
 
-        var own = request.yar.get('own') || {};
-        const isOwn = own[page.id];
-        const isAdmin = request.yar.get('admin');
+        const isOwn = ownership.isOwner(request, page);
 
         return {
           headTitle: page.title,
           benchmark: true,
           showAtom: {
-            slug: request.path.slice(1) // remove slash
+            slug: basePath.slug(request)
           },
           jsClass: true,
-          isAdmin: isAdmin,
           // Don’t let robots index non-published test cases
-          noIndex: page.visible === 'n' && (isOwn || isAdmin),
+          noIndex: page.visible === 'n' && isOwn,
           pageInit: page.initHTML.includes('function init()'),
-          hasPrep: hasPrep,
-          hasSetupOrTeardown: hasSetupOrTeardown,
-          stripped: stripped,
-          page: page
+          hasPrep,
+          hasSetupOrTeardown,
+          hasComplexity: page.test.some((test) => test.complexityView),
+          stripped,
+          page
         };
       })
       .catch((err) => {
@@ -91,20 +105,17 @@ exports.register = function (server, options, next) {
   server.route({
     method: 'GET',
     path: '/{testSlug}/{rev?}',
-    config: {
+    options: {
       auth: {
         mode: 'try',
         strategy: 'session'
       }
     },
-    handler: function (request, reply) {
-      getTestPage(request)
-        .then((model) => {
-          model.userAgent = request.plugins.scooter.toString();
-          model.mediumTextLength = defaults.mediumTextLength;
-          reply.view('test/index', model);
-        })
-        .catch(reply);
+    handler: async (request, h) => {
+      const model = await getTestPage(request);
+      model.userAgent = userAgent(request.plugins.scooter);
+      model.mediumTextLength = defaults.mediumTextLength;
+      return h.view('test/index', model);
     }
   });
 
@@ -112,113 +123,131 @@ exports.register = function (server, options, next) {
   server.route({
     method: 'POST',
     path: '/{testSlug}/{rev?}',
-    config: {
+    options: {
       auth: {
         mode: 'try',
         strategy: 'session'
       }
     },
-    handler: (request, reply) => {
+    handler: async (request, h) => {
       if (!request.auth.isAuthenticated) {
-        return reply(Boom.unauthorized('Unauthorized'));
+        throw Boom.unauthorized('Unauthorized');
       }
 
-      getTestPage(request)
-        .then((model) => {
-          request.payload.authorGitHub = request.auth.credentials.username;
+      const model = await getTestPage(request);
+      request.payload.authorGitHub = request.auth.credentials.username;
+      const result = schema.comment.validate(request.payload, { abortEarly: false });
+      model.mediumTextLength = defaults.mediumTextLength;
 
-          const result = Joi.validate(request.payload, schema.comment, {abortEarly: false});
-          if (result.error) {
-            let errObj = {};
-
-            result.error.details.forEach(detail => {
-              let errMsg = defaults.errors.comment[detail.path];
-              if (errMsg) {
-                errObj[`${detail.path}Error`] = errMsg;
-              }
-            });
-
-            model.mediumTextLength = defaults.mediumTextLength;
-            reply.view('test/index', Object.assign(model, errObj, request.payload));
-          } else {
-            const ip = request.headers['x-forwarded-for'] || request.info.remoteAddress;
-            return commentsService.create(model.page.id, ip, result.value)
-              .then((comment) => {
-                model.page.comments.push(comment);
-                model.mediumTextLength = defaults.mediumTextLength;
-                reply.view('test/index', model);
-              });
+      if (result.error) {
+        const errObj = {};
+        result.error.details.forEach((detail) => {
+          const errMsg = defaults.errors.comment[detail.path];
+          if (errMsg) {
+            errObj[`${detail.path}Error`] = errMsg;
           }
-        })
-        .catch(reply);
+        });
+        return h.view('test/index', Object.assign(model, errObj, request.payload));
+      }
+
+      const ip = clientIp(request);
+      const comment = await commentsService.create(model.page.id, ip, result.value);
+      model.page.comments.push(comment);
+      return h.view('test/index', model);
     }
   });
 
-  // allows owner or admin to publish a test making it visible to the public
+  // allows the owner to publish a test making it visible to the public
   server.route({
-    method: 'GET',
+    method: 'POST',
     path: '/{testSlug}/{rev}/publish',
-    handler: function (request, reply) {
-      pagesService.getBySlug(request.params.testSlug, request.params.rev)
-        .then(function (values) {
-          const page = values[0];
-          const own = request.yar.get('own') || {};
-          const isOwn = own[page.id];
-          const isAdmin = request.yar.get('admin');
+    options: {
+      auth: {
+        mode: 'try',
+        strategy: 'session'
+      }
+    },
+    handler: async (request, h) => {
+      try {
+        const values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
+        const page = values[0];
 
-          if (isOwn || isAdmin) {
-            return pagesService.publish(page.id);
-          }
-
+        if (!ownership.isOwner(request, page)) {
           // whoever is requesting this doesn't own it so don't let them know it exists
           throw new Error('Not found');
-        })
-        .then(function () {
-          server.log(['debug'], 'publish finished: ' + JSON.stringify(arguments));
-          reply.redirect(`/${request.params.testSlug}/${request.params.rev}`);
-        })
-        .catch(function (err) {
-          if (err.message === 'Not found') {
-            reply(Boom.notFound('The page was not found'));
-          } else {
-            reply(err);
-          }
-        });
+        }
+
+        await pagesService.publish(page.id);
+      } catch (err) {
+        if (err.message === 'Not found') {
+          throw Boom.notFound('The page was not found');
+        }
+        throw err;
+      }
+
+      return h.redirect(basePath.url(request, `/${request.params.testSlug}/${request.params.rev}`));
+    }
+  });
+
+  // The page's own code (preparation HTML, setup, teardown and the tests) is untrusted, so it runs here, in a
+  // document that browsers sandbox into an opaque origin: no cookies, storage or access to the rest of the site
+  // even when this URL is opened directly. `allow-scripts` is the only permission it gets.
+  server.route({
+    method: 'GET',
+    path: '/{testSlug}/{rev}/frame',
+    options: {
+      // the page embeds this document, so it may be framed by the same origin
+      security: { xframe: 'sameorigin' }
+    },
+    handler: async (request, h) => {
+      let values;
+      try {
+        values = await pagesService.getBySlug(request.params.testSlug, request.params.rev);
+      } catch (err) {
+        if (err.message === 'Not found') {
+          throw Boom.notFound('The page was not found');
+        }
+        throw err;
+      }
+
+      const page = values[0];
+      page.test = values[1];
+
+      return h
+        .view('test/frame', { page, runner: getRunner() }, { layout: false })
+        .header('Content-Security-Policy', 'sandbox allow-scripts');
     }
   });
 
   server.route({
     method: 'GET',
     path: '/{testSlug}.atom',
-    handler: (request, reply) => {
-      pagesService.getVisibleBySlugWithRevisions(request.params.testSlug)
-        .then(values => {
-          const model = {
-            page: values[0],
-            revisions: values[1]
-          };
+    handler: async (request, h) => {
+      let values;
+      try {
+        values = await pagesService.getVisibleBySlugWithRevisions(request.params.testSlug);
+      } catch (err) {
+        if (err.message === 'Not found') {
+          throw Boom.notFound('The page was not found');
+        }
+        throw err;
+      }
 
-          reply
-            .view('test/index-atom', model, {
-              layout: false
-            })
-            .header('Content-Type', 'application/atom+xml;charset=UTF-8')
-            .header('Last-Modified', model.page.updated.toString());
-        })
-        .catch(err => {
-          if (err.message === 'Not found') {
-            reply(Boom.notFound('The page was not found'));
-          } else {
-            reply(err);
-          }
-        });
+      const model = {
+        page: values[0],
+        revisions: values[1]
+      };
+
+      return h
+        .view('test/index-atom', model, { layout: false })
+        .header('Content-Type', 'application/atom+xml;charset=UTF-8')
+        .header('Last-Modified', model.page.updated.toString());
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/test',
-  dependencies: ['services/pages', 'services/comments']
+  dependencies: ['services/pages', 'services/comments'],
+  register
 };

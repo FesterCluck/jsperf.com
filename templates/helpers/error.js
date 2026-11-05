@@ -1,10 +1,10 @@
-var Handlebars = require('handlebars');
+const Handlebars = require('handlebars');
 
 module.exports = function (msg, options) {
-  var result;
-  var tag = options.hash.tag || 'span';
+  let result;
+  const tag = options.hash.tag || 'span';
   if (msg) {
-    result = new Handlebars.SafeString('<' + tag + ' class="error">' + msg + '</' + tag + '>');
+    result = new Handlebars.SafeString('<' + tag + ' class="error">' + Handlebars.Utils.escapeExpression(msg) + '</' + tag + '>');
   }
 
   return result;

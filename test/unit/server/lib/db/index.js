@@ -1,153 +1,130 @@
-const Lab = require('lab');
-const Code = require('code');
-const Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Hapi = require('@hapi/hapi');
 const proxyquire = require('proxyquire');
 const sinon = require('sinon');
 
-const mysqlStub = {};
+const mysqlStub = { escape: (v) => '`' + v + '`' };
 const umzugStub = {};
+let queryStub, endStub, umzugOptions;
 
 const Db = proxyquire('../../../../../server/lib/db', {
-  'mysql': mysqlStub,
-  'umzug': function () {
-    return umzugStub;
+  mysql2: mysqlStub,
+  umzug: {
+    Umzug: function (opts) {
+      umzugOptions = opts;
+      return umzugStub;
+    }
   }
 });
 
 const lab = exports.lab = Lab.script();
 
+const register = (server, options) => server.register({ plugin: Db, options });
+
 lab.experiment('Database Plugin', () => {
-  lab.test('registers successfully', (done) => {
-    umzugStub.up = () => Promise.resolve([]);
-
-    const server = new Hapi.Server();
-
-    server.connection();
-
-    server.register([Db], (err) => {
-      Code.expect(err).to.not.exist();
-      Code.expect(server.plugins).to.include('db');
-
-      done();
-    });
+  lab.beforeEach(() => {
+    queryStub = sinon.stub().resolves([[], []]);
+    endStub = sinon.stub().resolves();
+    mysqlStub.createPool = () => ({ promise: () => ({ query: queryStub, end: endStub }) });
   });
 
-  lab.test('registers UNsuccessfully', (done) => {
+  lab.test('registers successfully', async () => {
+    umzugStub.up = () => Promise.resolve([]);
+
+    const server = Hapi.server();
+    await register(server);
+
+    Code.expect(server.plugins).to.include('db');
+  });
+
+  lab.test('registers UNsuccessfully', async () => {
     umzugStub.up = () => Promise.reject(new Error('umzugtesting'));
 
-    const server = new Hapi.Server();
+    const server = Hapi.server();
 
-    server.connection();
-
-    server.register([Db], (err) => {
-      Code.expect(err).to.exist();
-      Code.expect(err.message).to.equal('umzugtesting');
-
-      done();
-    });
+    await Code.expect(register(server)).to.reject('umzugtesting');
   });
 
-  lab.test('registers debug', (done) => {
+  lab.test('ends the pool when the server stops', async () => {
     umzugStub.up = () => Promise.resolve([]);
 
-    const server = new Hapi.Server();
+    const server = Hapi.server();
+    await register(server);
+    await server.initialize();
+    await server.stop();
 
-    server.connection();
-
-    server.register([{
-      register: Db,
-      options: { debug: true }
-    }], (err) => {
-      Code.expect(err).to.not.exist();
-
-      done();
-    });
+    Code.expect(endStub.calledOnce).to.be.true();
   });
 
-  lab.experiment('escape', function () {
-    lab.test('exports mysql.escape', function (done) {
+  lab.test('configures umzug logger and resolver', async () => {
+    umzugStub.up = () => Promise.resolve([]);
+
+    const server = Hapi.server();
+    await register(server, { connectionLimit: 2 });
+
+    ['info', 'warn', 'error', 'debug'].forEach((level) => umzugOptions.logger[level]('msg'));
+
+    const calls = [];
+    const migration = umzugOptions.migrations.resolve({
+      name: 'sub/20150101_create_world.js',
+      path: require('path').resolve(__dirname, '../../../../../server/lib/db/migrations/20150101_create_world.js'),
+      context: { genericQuery: (q) => calls.push(q) }
+    });
+    Code.expect(migration.name).to.equal('20150101_create_world.js');
+    await migration.up();
+    await migration.down();
+    Code.expect(calls).to.have.length(2);
+  });
+
+  lab.test('queries without debug logging', async () => {
+    umzugStub.up = () => Promise.resolve([]);
+
+    const server = Hapi.server();
+    await register(server);
+    await server.plugins.db.genericQuery('SELECT 1;');
+  });
+
+  lab.experiment('escape', () => {
+    lab.test('exports mysql.escape', async () => {
       umzugStub.up = () => Promise.resolve([]);
 
-      const server = new Hapi.Server();
+      const server = Hapi.server();
+      await register(server, { debug: true });
 
-      server.connection();
-
-      server.register([{
-        register: Db,
-        options: { debug: true }
-      }], (err) => {
-        Code.expect(err).to.not.exist();
-        Code.expect(server.plugins.db).to.include('escape');
-        Code.expect(server.plugins.db.escape).to.be.a.function();
-
-        done();
-      });
+      Code.expect(server.plugins.db.escape).to.be.a.function();
     });
   });
 
-  lab.experiment('genericQuery', function () {
-    let queryStub, endStub, server;
+  lab.experiment('genericQuery', () => {
+    let server;
 
-    lab.before(function (done) {
-      mysqlStub.createConnection = function () {
-        return {
-          query: queryStub,
-          escape: function (val) {
-            return '`' + val + '`';
-          },
-          end: endStub
-        };
-      };
-
-      server = new Hapi.Server();
-
-      server.connection();
-
-      server.register([Db], done);
+    lab.beforeEach(async () => {
+      umzugStub.up = () => Promise.resolve([]);
+      server = Hapi.server();
+      await register(server, { debug: true });
     });
 
-    lab.beforeEach(function (done) {
-      queryStub = sinon.stub();
-      endStub = sinon.stub().callsArgWith(0, null);
-
-      done();
-    });
-
-    lab.test('exposes genericQuery', (done) => {
-      Code.expect(server.plugins.db).to.include('genericQuery');
+    lab.test('exposes genericQuery', () => {
       Code.expect(server.plugins.db.genericQuery).to.be.a.function();
-      done();
     });
 
-    lab.test('creates a MySQL connection and makes a query', function (done) {
-      queryStub.callsArgWith(2, null);
-      server.plugins.db.genericQuery('SELECT ?;', [1]).then(done);
+    lab.test('queries the pool and returns rows', async () => {
+      queryStub.resolves([[{ a: 1 }], []]);
+
+      const rows = await server.plugins.db.genericQuery('SELECT ?;', [1]);
+      Code.expect(rows).to.equal([{ a: 1 }]);
     });
 
-    lab.test('rejects promise when query errors', function (done) {
-      queryStub.callsArgWith(2, new Error());
-      server.plugins.db.genericQuery('SELECT ?;', [1]).catch(function (err) {
-        Code.expect(err).to.be.instanceof(Error);
-        done();
-      });
+    lab.test('rejects when query errors', async () => {
+      queryStub.rejects(new Error('boom'));
+
+      await Code.expect(server.plugins.db.genericQuery('SELECT ?;', [1])).to.reject('boom');
     });
 
-    lab.test('values param is optional', function (done) {
-      queryStub.callsArgWith(2, null);
-      server.plugins.db.genericQuery('SELECT 1;')
-        .then(function () {
-          Code.expect(queryStub.args[0]).to.have.length(3);
-          done();
-        });
-    });
-
-    lab.test('logs error from ending connection', (done) => {
-      queryStub.callsArgWith(2, null);
-      endStub.callsArgWith(0, new Error('testend'));
-      server.plugins.db.genericQuery('SELECT 1;')
-        .then(function () {
-          done();
-        });
+    lab.test('values param is optional', async () => {
+      await server.plugins.db.genericQuery('SELECT 1;');
+      Code.expect(queryStub.args[0][1]).to.equal([]);
     });
   });
 });

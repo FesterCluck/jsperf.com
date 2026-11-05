@@ -1,56 +1,51 @@
 # Contributing to jsPerf
 
-Submit a pull request to `master` with passing tests (`./run test`) and properly [styled](https://github.com/Flet/semistandard) code. [Rebase](https://git-scm.com/docs/git-rebase) as needed.
+Submit a pull request to `master` with passing tests (`npm test`) and properly [styled](https://github.com/Flet/semistandard) code. [Rebase](https://git-scm.com/docs/git-rebase) as needed.
 
 During development it may be helpful to automatically restart the server when you make changes.
 
 ```
-./run watch
+npm run watch
 ```
 
 ## Building the client
 
-If you make any changes inside [`client/`](https://github.com/jsperf/jsperf.com/tree/master/client), then you'll need to manually re-build the final asset.
+If you make any changes inside [`client/`](https://github.com/FesterCluck/jsperf.com/tree/master/client), then you'll need to manually re-build the final asset.
 
 ```
-./run build
+npm run build
 ```
 
 ## Testing
 
-We use [lab](https://github.com/hapijs/lab) as our test utility and [code](https://github.com/hapijs/code) as our assertion library. Lab lints with [eslint](http://eslint.org/) using the [semistandard style](https://github.com/Flet/semistandard). 100% code coverage by unit tests is required. To run the test suite:
+We use [lab](https://github.com/hapijs/lab) as our test utility and [code](https://github.com/hapijs/code) as our assertion library. Linting uses [eslint](http://eslint.org/) (`npm run lint`) using [neostandard](https://github.com/neostandard/neostandard) with semicolons. 100% code coverage by unit tests is required. To run the test suite:
 
 ```
-./run test
+npm test
 ```
 
-_If you want to only lint and save a little time, use `./run lint` which skips the tests._
+_If you want to only lint and save a little time, use `npm run lint` which skips the tests._
 
 _If you are missing code coverage, open `coverage.html` in the root of the project for a detailed visual report._
 
 ### End-to-end (e2e)
 
-End-to-end testing is done by [Selenium Webdriver](https://www.npmjs.com/package/selenium-webdriver). [SauceLabs](https://saucelabs.com) provides Selenium infrastructure for CI. To run tests locally, you'll need [Chrome](https://www.google.com/chrome) and [webdriver-manager](https://www.npmjs.com/package/webdriver-manager).
+End-to-end testing uses [Playwright](https://playwright.dev) with headless Chromium. Install the browser once, then run the specs:
 
 ```
-npm i -g webdriver-manager
-
-webdriver-manager update
+npm run test-e2e:install
+npm run test-e2e
 ```
 
-In one terminal, have jsPerf running (`./run start`). In another, have webdriver-manager running (`webdriver-manager start`). And in yet another, run the tests:
-
-```
-SELENIUM_SERVER=http://127.0.0.1:4444/wd/hub ./run test-e2e
-```
+The runner starts `node server.js` itself (port `E2E_PORT`, default 3100). The server needs a reachable MySQL (it runs migrations on startup) with `MYSQL_USER`, `MYSQL_PASSWORD` and `MYSQL_DATABASE` set (a `.env` file works); Redis is only needed in production. To test an already running server, set `E2E_BASE_URL`. The "create page" spec registers a unique throwaway local user through `/register` (no credentials or extra env vars needed), so it leaves one test user and one test page in the database; use a scratch database.
 
 ### Known Globals
 
-Lab detects global variable leaks. Sometimes downstream dependencies make this unavoidable so we ignore specific variables in the `lab` command for `./run test` (`package.json#scripts.test`). Here are the known globals with explanations:
+Lab detects global variable leaks. Sometimes downstream dependencies make this unavoidable so we ignore specific variables in the `lab` command for `npm test` (`package.json#scripts.test`). Here are the known globals with explanations:
 
 - `__core-js_shared__` stems from `core-js`?
 - `__grim__` stems from `grim`, a dependency of `marky-markdown` (`npm ls grim`)
 
 ## Adding new dependencies
 
-Dependencies are installed via npm; add them with `npm install --save <name>`.
+Install using `npm` and either `--save` or `--save-dev`. **Do not edit `package.json` manually.**

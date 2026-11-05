@@ -1,9 +1,10 @@
-exports.register = function (server, options, next) {
-  var redirects = [
+'use strict';
+
+const basePath = require('../lib/basePath');
+
+const register = (server) => {
+  const redirects = [
     {
-      path: '/@',
-      redirect: 'https://twitter.com/jsperf'
-    }, {
       path: '/document-head-speed-test',
       redirect: '/document-head'
     }, {
@@ -24,29 +25,21 @@ exports.register = function (server, options, next) {
     }, {
       path: '/remove-all-child-nodes',
       redirect: '/removechildren/3'
-    }, {
-      path: '/donate',
-      redirect: '/sponsor'
     }
   ];
 
-  var handler = function (url) {
-    return function (request, reply) {
-      reply.redirect(url).permanent();
-    };
-  };
+  const handler = (url) => (request, h) => h.redirect(basePath.url(request, url)).permanent();
 
-  for (var i = 0, rl = redirects.length; i < rl; i++) {
+  for (const { path, redirect } of redirects) {
     server.route({
       method: 'GET',
-      path: redirects[i].path,
-      handler: handler(redirects[i].redirect)
+      path,
+      handler: handler(redirect)
     });
   }
-
-  return next();
 };
 
-exports.register.attributes = {
-  name: 'web/redirects'
+exports.plugin = {
+  name: 'web/redirects',
+  register
 };

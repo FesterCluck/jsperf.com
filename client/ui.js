@@ -1,692 +1,339 @@
-/* global Benchmark localStorage _ */
 /*!
  * ui.js
- * Copyright Mathias Bynens <https://mths.be/>
- * Modified by John-David Dalton <http://allyoucanleet.com/>
+ * The test page's side of the sandboxed test frame (see runner.js): sends run/stop commands and renders the
+ * results the frame reports. The user's code only ever runs inside the frame, so everything it sends is
+ * untrusted: it is validated here and written to the page as text, never as HTML.
+ *
+ * Based on ui.js by Mathias Bynens <https://mths.be/> and John-David Dalton <http://allyoucanleet.com/>
  * Available under MIT license <https://mths.be/mit>
  */
 (function (window, document) {
-  /** Cache of error messages */
-  var errors = [];
-
-  /** Cache of event handlers */
-  var handlers = {};
-
-  /** A flag to indicate that the page has loaded */
-  var pageLoaded = false;
+  const frame = document.getElementById('test-frame');
 
   /** Benchmark results element id prefix (e.g. `results-1`) */
-  var prefix = 'results-';
+  const prefix = 'results-';
 
-  /** The element responsible for scrolling the page (assumes ui.js is just before </body>) */
-  var scrollEl = document.body;
+  /** Cache of error messages */
+  const errors = [];
 
-  /** Used to resolve a value's internal [[Class]] */
-  var toString = {}.toString;
+  /** The most recent valid state reported by the frame */
+  let state = null;
 
-  /** Namespace */
-  var ui = new Benchmark.Suite();
-
-  /** Object containing various CSS class names */
-  var classNames = {
-    // used for error styles
-    'error': 'error',
-    // used to make content visible
-    'show': 'show',
-    // used to reset result styles
-    'results': 'results'
+  const texts = {
+    'run': { 'again': 'Run again', 'ready': 'Run tests', 'running': 'Stop running' },
+    'status': { 'again': 'Done. Ready to run again.', 'loading': 'Loading tests…', 'ready': 'Ready to run.' }
   };
 
-  /** Used to flag environments/features */
-  var has = {
-    // used for pre-populating form fields
-    'localStorage': !!(function () {
-      try {
-        return !localStorage.getItem(+new Date());
-      } catch (e) {}
-    })(),
-    // used to distinguish between a regular test page and an embedded chart
-    'runner': !!$('runner')
-  };
+  const $ = (id) => document.getElementById(id);
 
-  /** Object containing various text messages */
-  var texts = {
-    // inner text for the various run button states
-    'run': {
-      'again': 'Run again',
-      'ready': 'Run tests',
-      'running': 'Stop running'
-    },
-    // common status values
-    'status': {
-      'again': 'Done. Ready to run again.',
-      'ready': 'Ready to run.'
-    }
-  };
+  const rows = () => document.querySelectorAll('[id^="results-"]').length;
 
-  /** The options object for Benchmark.Suite#run */
-  var runOptions = {
-    'async': true,
-    'queued': true
-  };
-
-  /** API shortcuts */
-  var filter = Benchmark.filter;
-  var formatNumber = Benchmark.formatNumber;
-  var join = Benchmark.join;
+  // 40px is room for the border and a sliver of content; the frame has to stay in view so it isn't throttled
+  const MIN_FRAME_HEIGHT = 40;
+  const MAX_FRAME_HEIGHT = 600;
 
   /* ------------------------------------------------------------------------ */
 
-  handlers.benchmark = {
+  const isNumber = (value) => typeof value === 'number' && isFinite(value);
 
-    /**
-     * The onCycle callback, used for onStart as well, assigned to new benchmarks.
-     *
-     * @private
-     */
-    'cycle': function () {
-      var bench = this;
-      var size = bench.stats.sample.length;
-
-      if (!bench.aborted) {
-        setStatus(bench.name + ' &times; ' + formatNumber(bench.count) + ' (' +
-          size + ' sample' + (size === 1 ? '' : 's') + ')');
-      }
-    },
-
-    /**
-     * The onStart callback assigned to new benchmarks.
-     *
-     * @private
-     */
-    'start': function () {
-      // call user provided init() function
-      if (isFunction(window.init)) {
-        init(); // eslint-disable-line no-undef
-      }
-    }
+  const formatNumber = (number) => {
+    const parts = String(number).split('.');
+    return parts[0].replace(/(?=(?:\d{3})+$)(?!\b)/g, ',') + (parts[1] ? `.${parts[1]}` : '');
   };
 
-  handlers.button = {
+  const isIndexList = (list, length) => Array.isArray(list) && list.every((i) => Number.isInteger(i) && i >= 0 && i < length);
 
-    /**
-     * The "run" button click event handler used to run or abort the benchmarks.
-     *
-     * @private
-     */
-    'run': function () {
-      var stopped = !ui.running;
-      ui.abort();
-      ui.length = 0;
-
-      if (stopped) {
-        logError({ 'clear': true });
-        ui.push.apply(ui, _.filter(ui.benchmarks, function (bench) {
-          return !bench.error && bench.reset();
-        }));
-        ui.run(runOptions);
-      }
+  const parseBench = (bench) => {
+    if (!bench || typeof bench !== 'object' || typeof bench.name !== 'string' ||
+        !['count', 'cycles', 'rme', 'samples', 'cycleTime'].every((key) => isNumber(bench[key])) ||
+        typeof bench.hz !== 'number' || typeof bench.adjustedHz !== 'number' ||
+        typeof bench.running !== 'boolean' || typeof bench.aborted !== 'boolean' ||
+        (bench.error !== null && typeof bench.error !== 'string') || typeof bench.extra !== 'string') {
+      return null;
     }
+
+    return {
+      'name': bench.name,
+      'count': bench.count,
+      'cycles': bench.cycles,
+      'running': bench.running,
+      'aborted': bench.aborted,
+      'error': bench.error,
+      'hz': bench.hz,
+      'adjustedHz': bench.adjustedHz,
+      'rme': bench.rme,
+      'samples': bench.samples,
+      'cycleTime': bench.cycleTime,
+      'extra': bench.extra
+    };
   };
 
-  handlers.title = {
-
-    /**
-     * The title table cell click event handler used to run the corresponding benchmark.
-     *
-     * @private
-     * @param {Object} event The event object.
-     */
-    'click': function (event) {
-      event || (event = window.event);
-
-      var id;
-      var index;
-      var target = event.target || event.srcElement;
-
-      while (target && !(id = target.id)) {
-        target = target.parentNode;
-      }
-      index = (id && --id.split('-')[1]) || 0;
-      ui.push(ui.benchmarks[index].reset());
-      ui.running ? ui.render(index) : ui.run(runOptions);
-    },
-
-    /**
-     * The title cell keyup event handler used to simulate a mouse click when hitting the ENTER key.
-     *
-     * @private
-     * @param {Object} event The event object.
-     */
-    'keyup': function (event) {
-      if ((event || window.event).keyCode === 13) {
-        handlers.title.click(event);
-      }
+  /** Returns a sanitized copy of a state message, or null when it is not one */
+  const parseState = (data) => {
+    if (!data || data.type !== 'state' || !Array.isArray(data.benches) || !Array.isArray(data.queued) ||
+        data.benches.length !== rows() || data.queued.length !== data.benches.length ||
+        typeof data.running !== 'boolean' || typeof data.ready !== 'boolean' || typeof data.event !== 'string' ||
+        !Number.isInteger(data.active) || data.active >= data.benches.length) {
+      return null;
     }
-  };
 
-  handlers.window = {
-
-    /**
-     * The window hashchange event handler supported by Chrome 5+, Firefox 3.6+, and IE8+.
-     *
-     * @private
-     */
-    'hashchange': function () {
-      ui.parseHash();
-
-      var scrollTop;
-      var params = ui.params;
-      var chart = params.chart;
-      var filterBy = params.filterby;
-
-      if (pageLoaded) {
-        // configure browserscope
-        ui.browserscope.postable = has.runner && !('nopost' in params);
-
-        // configure chart renderer
-        if (chart || filterBy) {
-          scrollTop = $('results').offsetTop;
-          ui.browserscope.render({ 'chart': chart, 'filterBy': filterBy });
-        }
-        if (has.runner) {
-          // call user provided init() function
-          if (isFunction(window.init)) {
-            init(); // eslint-disable-line no-undef
-          }
-          // auto-run
-          if ('run' in params) {
-            scrollTop = $('runner').offsetTop;
-            setTimeout(handlers.button.run, 1);
-          }
-          // scroll to the relevant section
-          if (scrollTop) {
-            scrollEl.scrollTop = scrollTop;
-          }
-        }
-      }
-    },
-
-    /**
-     * The window load event handler used to initialize the UI.
-     *
-     * @private
-     */
-    'load': function () {
-      // only for test pages
-      if (has.runner) {
-        // init the ui
-        addClass('controls', classNames.show);
-        addListener('run', 'click', handlers.button.run);
-
-        setHTML('run', texts.run.ready);
-        setStatus(texts.status.ready);
-
-        // show warning when Firebug is enabled (avoids showing for Firebug Lite)
-        try {
-          // Firebug 1.9 no longer has `console.firebug`
-          if (console.firebug || /firebug/i.test(console.table())) {
-            addClass('firebug', classNames.show);
-          }
-        } catch (exception) {}
-      }
-      // clear length so tests can be manually queued
-      ui.length = 0;
-
-      // evaluate hash values after all other "load" events have fired
-      _.defer(function () {
-        pageLoaded = true;
-        handlers.window.hashchange();
-      });
+    const benches = data.benches.map(parseBench);
+    const ranks = data.ranks;
+    if (benches.includes(null) || !data.queued.every((q) => typeof q === 'boolean') ||
+        (ranks !== null && (!ranks || !isIndexList(ranks.fastest, benches.length) || !isIndexList(ranks.slowest, benches.length)))) {
+      return null;
     }
+
+    return {
+      'event': data.event,
+      'ready': data.ready,
+      'running': data.running,
+      'active': data.active,
+      'queued': data.queued.slice(),
+      'ranks': ranks && { 'fastest': ranks.fastest.slice(), 'slowest': ranks.slowest.slice() },
+      benches,
+      'height': isNumber(data.height) ? data.height : 0
+    };
   };
 
   /* ------------------------------------------------------------------------ */
 
-  /**
-   * Shortcut for document.getElementById().
-   *
-   * @private
-   * @param {Element|string} id The id of the element to retrieve.
-   * @returns {Element} The element, if found, or null.
-   */
-  function $ (id) {
-    return typeof id === 'string' ? document.getElementById(id) : id;
-  }
+  const setText = (element, text) => {
+    element.textContent = text;
+  };
 
-  /**
-   * Adds a CSS class name to an element's className property.
-   *
-   * @private
-   * @param {Element|string} element The element or id of the element.
-   * @param {string} className The class name.
-   * @returns {Element} The element.
-   */
-  function addClass (element, className) {
-    if ((element = $(element)) && !hasClass(element, className)) {
-      element.className += (element.className ? ' ' : '') + className;
+  const setStatus = (text) => setText($('status'), text);
+
+  /** Appends a message (and optional details) to the error log below the table */
+  const logError = (message, details) => {
+    let div = $('error-info');
+    const text = details ? `${message} ${details}` : message;
+
+    if (errors.includes(text)) {
+      return;
     }
-    return element;
-  }
 
-  /**
-   * Registers an event listener on an element.
-   *
-   * @private
-   * @param {Element|string} element The element or id of the element.
-   * @param {string} eventName The name of the event.
-   * @param {Function} handler The event handler.
-   * @returns {Element} The element.
-   */
-  function addListener (element, eventName, handler) {
-    if ((element = $(element))) {
-      if (typeof element.addEventListener !== 'undefined') {
-        element.addEventListener(eventName, handler, false);
-      } else if (typeof element.attachEvent !== 'undefined') {
-        element.attachEvent('on' + eventName, handler);
-      }
-    }
-    return element;
-  }
-
-  /**
-   * Appends to an element's innerHTML property.
-   *
-   * @private
-   * @param {Element|string} element The element or id of the element.
-   * @param {string} html The HTML to append.
-   * @returns {Element} The element.
-   */
-  function appendHTML (element, html) {
-    if ((element = $(element)) && html != null) {
-      element.innerHTML += html;
-    }
-    return element;
-  }
-
-  /**
-   * Shortcut for document.createElement().
-   *
-   * @private
-   * @param {string} tag The tag name of the element to create.
-   * @returns {Element} A new element of the given tag name.
-   */
-  function createElement (tagName) {
-    return document.createElement(tagName);
-  }
-
-  /**
-   * Checks if an element is assigned the given class name.
-   *
-   * @private
-   * @param {Element|string} element The element or id of the element.
-   * @param {string} className The class name.
-   * @returns {boolean} If assigned the class name return true, else false.
-   */
-  function hasClass (element, className) {
-    return !!(element = $(element)) &&
-      (' ' + element.className + ' ').indexOf(' ' + className + ' ') > -1;
-  }
-
-  /**
-   * Set an element's innerHTML property.
-   *
-   * @private
-   * @param {Element|string} element The element or id of the element.
-   * @param {string} html The HTML to set.
-   * @returns {Element} The element.
-   */
-  function setHTML (element, html) {
-    if ((element = $(element))) {
-      element.innerHTML = html == null ? '' : html;
-    }
-    return element;
-  }
-
-  /* ------------------------------------------------------------------------ */
-
-  /**
-   * Gets the Hz, i.e. operations per second, of `bench` adjusted for the
-   * margin of error.
-   *
-   * @private
-   * @param {Object} bench The benchmark object.
-   * @returns {number} Returns the adjusted Hz.
-   */
-  function getHz (bench) {
-    return 1 / (bench.stats.mean + bench.stats.moe);
-  }
-
-  /**
-   * Checks if a value has an internal [[Class]] of Function.
-   *
-   * @private
-   * @param {Mixed} value The value to check.
-   * @returns {boolean} Returns `true` if the value is a function, else `false`.
-   */
-  function isFunction (value) {
-    return toString.call(value) === '[object Function]';
-  }
-
-  /**
-   * Appends to or clears the error log.
-   *
-   * @private
-   * @param {string|Object} text The text to append or options object.
-   */
-  function logError (text) {
-    var table;
-    var div = $('error-info');
-    var options = {};
-
-    // juggle arguments
-    if (typeof text === 'object' && text) {
-      options = text;
-      text = options.text;
-    } else if (arguments.length) {
-      options.text = text;
-    }
     if (!div) {
-      table = $('test-table');
-      div = createElement('div');
+      const table = $('test-table');
+      div = document.createElement('div');
       div.id = 'error-info';
       table.parentNode.insertBefore(div, table.nextSibling);
     }
-    if (options.clear) {
-      div.className = div.innerHTML = '';
-      errors.length = 0;
+
+    errors.push(text);
+    div.className = 'show';
+
+    const p = document.createElement('p');
+    setText(p, `${message}.`);
+    div.appendChild(p);
+
+    if (details) {
+      const ul = document.createElement('ul');
+      const li = document.createElement('li');
+      setText(li, details);
+      ul.appendChild(li);
+      div.appendChild(ul);
     }
-    if ('text' in options && _.indexOf(errors, text) < 0) {
-      errors.push(text);
-      addClass(div, classNames.show);
-      appendHTML(div, text);
+  };
+
+  const clearErrors = () => {
+    const div = $('error-info');
+    if (div) {
+      div.className = '';
+      div.textContent = '';
     }
-  }
+    errors.length = 0;
+  };
 
-  /**
-   * Sets the status text.
-   *
-   * @private
-   * @param {string} text The text to write to the status.
-   */
-  function setStatus (text) {
-    setHTML('status', text);
-  }
+  const getHz = (bench) => bench.adjustedHz;
 
-  /* ------------------------------------------------------------------------ */
-
-  /**
-   * Parses the window.location.hash value into an object assigned to `ui.params`.
-   *
-   * @static
-   * @memberOf ui
-   * @returns {Object} The suite instance.
-   */
-  function parseHash () {
-    var me = this;
-    var hashes = window.location.hash.slice(1).split('&');
-    var params = me.params || (me.params = {});
-
-    // remove old params
-    _.forOwn(params, function (value, key) {
-      delete params[key];
-    });
-
-    // add new params
-    _.each(hashes[0] && hashes, function (value) {
-      value = value.split('=');
-      params[value[0].toLowerCase()] = (value[1] || '').toLowerCase();
-    });
-    return me;
-  }
-
-  /**
-   * Renders the results table cell of the corresponding benchmark(s).
-   *
-   * @static
-   * @memberOf ui
-   * @param {number} [index] The index of the benchmark to render.
-   * @returns {Object} The suite instance.
-   */
-  function render (index) {
-    _.each(index == null ? (index = 0, ui.benchmarks) : [ui.benchmarks[index]], function (bench) {
-      var parsed;
-      var cell = $(prefix + (++index));
-      var error = bench.error;
-      var hz = bench.hz;
-
-      // reset title and class
-      cell.title = '';
-      cell.className = classNames.results;
-
-      // status: error
-      if (error) {
-        setHTML(cell, 'Error');
-        addClass(cell, classNames.error);
-        parsed = join(error, '</li><li>');
-        logError('<p>' + error + '.</p>' + (parsed ? '<ul><li>' + parsed + '</li></ul>' : ''));
-      } else {
-        // status: running
-        if (bench.running) {
-          setHTML(cell, 'running&hellip;');
-        } else if (bench.cycles) { // status: completed
-          // obscure details until the suite has completed
-          if (ui.running) {
-            setHTML(cell, 'completed');
-          } else {
-            cell.title = 'Ran ' + formatNumber(bench.count) + ' times in ' +
-              bench.times.cycle.toFixed(3) + ' seconds.';
-            setHTML(cell, formatNumber(hz.toFixed(hz < 100 ? 2 : 0)) +
-              ' <small>&plusmn;' + bench.stats.rme.toFixed(2) + '%</small>');
-          }
-        } else {
-          // status: pending
-          if (ui.running && ui.indexOf(bench) > -1) {
-            setHTML(cell, 'pending&hellip;');
-          } else { // status: ready
-            setHTML(cell, 'ready');
-          }
-        }
-      }
-    });
-    return ui;
-  }
-
-  /* ------------------------------------------------------------------------ */
-
-  ui.on('add', function (event) {
-    var bench = event.target;
-    var index = ui.benchmarks.length;
-    var id = index + 1;
-    var title = $('title-' + id);
-
-    ui.benchmarks.push(bench);
-
-    if (has.runner) {
-      title.tabIndex = 0;
-      title.title = 'Click to run this test again.';
-
-      addListener(title, 'click', handlers.title.click);
-      addListener(title, 'keyup', handlers.title.keyup);
-
-      bench.on('start', handlers.benchmark.start);
-      bench.on('start cycle', handlers.benchmark.cycle);
-      ui.render(index);
-    }
-  })
-    .on('start cycle', function () {
-      ui.render();
-      setHTML('run', texts.run.running);
-    })
-    .on('complete', function () {
-      var benches = filter(ui.benchmarks, 'successful');
-      var fastest = filter(benches, 'fastest');
-      var slowest = filter(benches, 'slowest');
-
-      ui.render();
-      setHTML('run', texts.run.again);
-      setStatus(texts.status.again);
-
-      // highlight result cells
-      _.each(benches, function (bench) {
-        var cell = $(prefix + (_.indexOf(ui.benchmarks, bench) + 1));
-        var fastestHz = getHz(fastest[0]);
-        var hz = getHz(bench);
-        var percent = (1 - (hz / fastestHz)) * 100;
-        var span = cell.getElementsByTagName('span')[0];
-        var text = 'fastest';
-
-        if (_.indexOf(fastest, bench) > -1) {
-        // mark fastest
-          addClass(cell, text);
-        } else {
-          text = isFinite(hz)
-            ? formatNumber(percent < 1 ? percent.toFixed(2) : Math.round(percent)) + '% slower'
-            : '';
-
-          // mark slowest
-          if (_.indexOf(slowest, bench) > -1) {
-            addClass(cell, 'slowest');
-          }
-        }
-        // write ranking
-        if (span) {
-          setHTML(span, text);
-        } else {
-          appendHTML(cell, '<span>' + text + '</span>');
-        }
-      });
-
-      ui.browserscope.post();
-    });
-
-  /* ------------------------------------------------------------------------ */
-
-  /**
-   * An array of benchmarks created from test cases.
-   *
-   * @memberOf ui
-   * @type Array
-   */
-  ui.benchmarks = [];
-
-  /**
-   * The parsed query parameters of the pages url hash.
-   *
-   * @memberOf ui
-   * @type Object
-   */
-  ui.params = {};
-
-  // parse query params into ui.params hash
-  ui.parseHash = parseHash;
-
-  // (re)render the results of one or more benchmarks
-  ui.render = render;
-
-  /* ------------------------------------------------------------------------ */
-
-  // expose
-  window.ui = ui;
-
-  // don't let users alert, confirm, prompt, or open new windows
-  window.alert = window.confirm = window.prompt = window.open = function () {};
-
-  // parse hash query params when it changes
-  addListener(window, 'hashchange', handlers.window.hashchange);
-
-  // bootstrap onload
-  addListener(window, 'load', handlers.window.load);
-
-  // parse location hash string
-  ui.parseHash();
-
-  // provide a simple UI for toggling between chart types and filtering results
-  // (assumes ui.js is just before </body>)
-  (function () {
-    var sibling = $('bs-results');
-    if (!sibling) {
+  /** Renders the results table cell of every test */
+  const render = () => {
+    if (!state) {
       return;
     }
-    var p = createElement('p');
 
-    p.innerHTML =
-      '<span id=charts><strong>Chart type:</strong> <a href=#>bar</a>, ' +
-      '<a href=#>column</a>, <a href=#>line</a>, <a href=#>pie</a>, ' +
-      '<a href=#>table</a></span><br>' +
-      '<span id=filters><strong>Filter:</strong> <a href=#>popular</a>, ' +
-      '<a href=#>all</a>, <a href=#>desktop</a>, <a href=#>family</a>, ' +
-      '<a href=#>major</a>, <a href=#>minor</a>, <a href=#>mobile</a>, ' +
-      '<a href=#>prerelease</a></span>';
+    const done = !state.running;
+    const ranks = done && state.ranks;
 
-    sibling.parentNode.insertBefore(p, sibling);
+    state.benches.forEach((bench, index) => {
+      const cell = $(prefix + (index + 1));
+      const extra = $(`extra-${index + 1}`);
 
-    // use DOM0 event handler to simplify canceling the default action
-    $('charts').onclick =
-    $('filters').onclick = function (event) {
-      event || (event = window.event);
-      var target = event.target || event.srcElement;
-      if (target.href || (target = target.parentNode).href) {
-        ui.browserscope.render(
-          target.parentNode.id === 'charts'
-            ? { 'chart': target.innerHTML }
-            : { 'filterBy': target.innerHTML }
-        );
+      cell.title = '';
+      cell.className = 'results';
+      cell.textContent = '';
+
+      if (extra) {
+        setText(extra, bench.extra);
       }
-      // cancel the default action
-      return false;
-    };
-  }());
+
+      if (bench.error) {
+        setText(cell, 'Error');
+        cell.className += ' error';
+        logError(bench.error);
+      } else if (bench.running) {
+        setText(cell, 'running…');
+      } else if (bench.cycles) {
+        // obscure details until the suite has completed
+        if (state.running) {
+          setText(cell, 'completed');
+        } else {
+          cell.title = `Ran ${formatNumber(bench.count)} times in ${bench.cycleTime.toFixed(3)} seconds.`;
+          cell.appendChild(document.createTextNode(`${formatNumber(bench.hz.toFixed(bench.hz < 100 ? 2 : 0))} `));
+          const small = document.createElement('small');
+          setText(small, `±${bench.rme.toFixed(2)}%`);
+          cell.appendChild(small);
+        }
+      } else {
+        setText(cell, state.running && state.queued[index] ? 'pending…' : 'ready');
+      }
+
+      if (ranks && !bench.error && bench.cycles && isFinite(bench.hz)) {
+        rank(cell, bench, index, ranks);
+      }
+    });
+  };
+
+  /** Highlights the fastest and slowest tests of a completed run and writes how much slower the others were */
+  const rank = (cell, bench, index, ranks) => {
+    const fastest = state.benches[ranks.fastest[0]];
+    const percent = fastest ? (1 - (getHz(bench) / getHz(fastest))) * 100 : 0;
+    let text = 'fastest';
+
+    if (ranks.fastest.includes(index)) {
+      cell.className += ' fastest';
+    } else {
+      text = isFinite(percent) ? `${formatNumber(percent < 1 ? percent.toFixed(2) : Math.round(percent))}% slower` : '';
+
+      if (ranks.slowest.includes(index)) {
+        cell.className += ' slowest';
+      }
+    }
+
+    const span = document.createElement('span');
+    setText(span, text);
+    cell.appendChild(span);
+  };
 
   /* ------------------------------------------------------------------------ */
 
-  // fork for runner or embedded chart
-  if (has.runner) {
-    // detect the scroll element
-    (function () {
-      var scrollTop;
-      var div = document.createElement('div');
-      var body = document.body;
-      var bodyStyle = body.style;
-      var bodyHeight = bodyStyle.height;
-      var html = document.documentElement;
-      var htmlStyle = html.style;
-      var htmlHeight = htmlStyle.height;
+  const send = (message) => {
+    // the sandboxed frame has an opaque origin, so there is no origin to target; nothing secret is sent
+    frame.contentWindow.postMessage(message, '*');
+  };
 
-      bodyStyle.height = htmlStyle.height = 'auto';
-      div.style.cssText = 'display:block;height:9001px;';
-      body.insertBefore(div, body.firstChild);
-      scrollTop = html.scrollTop;
+  const onState = (next) => {
+    const wasRunning = !!state && state.running;
+    state = next;
 
-      // set `scrollEl` that's used in `handlers.window.hashchange()`
-      if (html.clientWidth !== 0 && ++html.scrollTop && html.scrollTop === scrollTop + 1) {
-        scrollEl = html;
+    if (next.height) {
+      frame.style.height = `${Math.min(MAX_FRAME_HEIGHT, Math.max(MIN_FRAME_HEIGHT, Math.ceil(next.height) + 2))}px`;
+    }
+
+    if (next.running && !wasRunning) {
+      clearErrors();
+    }
+
+    render();
+
+    const run = $('run');
+    if (next.running) {
+      setText(run, texts.run.running);
+      const bench = next.benches[next.active];
+      if (bench && !bench.aborted) {
+        const size = bench.samples;
+        setStatus(`${bench.name} × ${formatNumber(bench.count)} (${size} sample${size === 1 ? '' : 's'})`);
       }
-      body.removeChild(div);
-      bodyStyle.height = bodyHeight;
-      htmlStyle.height = htmlHeight;
-      html.scrollTop = scrollTop;
-    }());
+    } else if (next.event === 'complete') {
+      setText(run, texts.run.again);
+      setStatus(texts.status.again);
+    } else if (next.event === 'ready') {
+      setText(run, texts.run.ready);
+      setStatus(texts.status.ready);
+      run.disabled = false;
+      autoRun();
+    } else if (wasRunning) {
+      // aborted
+      setText(run, texts.run.again);
+      setStatus(texts.status.ready);
+    }
+  };
 
-    // catch and display errors from the "preparation code"
-    window.onerror = function (message, fileName, lineNumber) {
-      logError('<p>' + message + '.</p><ul><li>' + join({
-        'message': message,
-        'fileName': fileName,
-        'lineNumber': lineNumber
-      }, '</li><li>') + '</li></ul>');
-      scrollEl.scrollTop = $('error-info').offsetTop;
-    };
-  } else {
-    // short circuit unusable methods
-    ui.render = function () {};
-    ui.off('start cycle complete');
-    setTimeout(function () {
-      ui.off();
-      ui.browserscope.post = function () {};
-      _.invokeMap(ui.benchmarks, 'off');
-    }, 1);
-  }
+  const params = () => {
+    const result = {};
+    window.location.hash.slice(1).split('&').forEach((pair) => {
+      const [key, value] = pair.split('=');
+      if (key) {
+        result[key.toLowerCase()] = (value || '').toLowerCase();
+      }
+    });
+    return result;
+  };
+
+  const autoRun = () => {
+    if ('run' in params()) {
+      $('runner').scrollIntoView();
+      setTimeout(() => send({ 'type': 'toggle' }), 1);
+    }
+  };
+
+  window.addEventListener('message', (event) => {
+    // the origin is "null" for a sandboxed frame, so the sender is identified by its window instead
+    if (event.source !== frame.contentWindow || !event.data || typeof event.data !== 'object') {
+      return;
+    }
+
+    if (event.data.type === 'error') {
+      const { message, fileName, lineNumber } = event.data;
+      if (typeof message === 'string' && typeof fileName === 'string' && isNumber(lineNumber)) {
+        logError(message, `fileName: ${fileName} lineNumber: ${lineNumber}`);
+        $('error-info').scrollIntoView();
+      }
+      return;
+    }
+
+    const next = parseState(event.data);
+    if (next) {
+      onState(next);
+    }
+  });
+
+  window.addEventListener('hashchange', () => {
+    if (state && state.ready) {
+      send({ 'type': 'init' });
+      autoRun();
+    }
+  });
 
   /* ------------------------------------------------------------------------ */
-}(this, document));
+
+  const run = $('run');
+  run.disabled = true;
+  setText(run, texts.run.ready);
+  setStatus(texts.status.loading);
+  $('controls').className += ' show';
+  run.addEventListener('click', () => {
+    if (state && state.ready) {
+      send({ 'type': 'toggle' });
+    }
+  });
+
+  document.querySelectorAll('[id^="title-"]').forEach((title) => {
+    const index = Number(title.id.split('-')[1]) - 1;
+    const click = () => {
+      if (state && state.ready) {
+        send({ 'type': 'run', index });
+      }
+    };
+
+    title.tabIndex = 0;
+    title.title = 'Click to run this test again.';
+    title.addEventListener('click', click);
+    title.addEventListener('keyup', (event) => {
+      if (event.keyCode === 13) {
+        click();
+      }
+    });
+  });
+}(window, document));

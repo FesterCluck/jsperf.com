@@ -1,0 +1,19 @@
+<h1>Register</h1>
+{{#if genError}}<p class="error">{{genError}}</p>{{/if}}
+<form action="{{@root.base}}/register" method="post">
+  <input type="hidden" name="crumb" value="{{crumb}}">
+  <div>
+    <label for="username">Username </label>
+    <input type="text" name="username" id="username" required maxlength="39" autocomplete="username" value="{{username}}">
+    {{#if usernameError}} <span class="error">{{usernameError}}</span>{{/if}}
+  </div>
+  <div>
+    <label for="password">Password </label>
+    <input type="password" name="password" id="password" required minlength="8" maxlength="128" autocomplete="new-password">
+    {{#if passwordError}} <span class="error">{{passwordError}}</span>{{/if}}
+  </div>
+  <div class="buttons">
+    <input type="submit" class="submit" value="Register">
+  </div>
+</form>
+<p>Already registered? <a href="{{@root.base}}/login">Log in</a>.</p>

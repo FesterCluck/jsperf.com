@@ -1,24 +1,25 @@
-var Lab = require('lab');
-var Code = require('code');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
 
-var error = require('../../../../templates/helpers/error');
+const error = require('../../../../templates/helpers/error');
 
-var lab = exports.lab = Lab.script();
+const lab = exports.lab = Lab.script();
 
 lab.experiment('Template Helper error', function () {
-  lab.test('returns span with error class', function (done) {
-    var safe = error('msg', { hash: {} });
+  lab.test('returns span with error class', async function () {
+    const safe = error('msg', { hash: {} });
     Code.expect(safe).to.be.object();
     Code.expect(safe.string).to.equal('<span class="error">msg</span>');
-
-    done();
   });
 
-  lab.test('returns tag with error class', function (done) {
-    var safe = error('msg', { hash: { tag: 'p' } });
+  lab.test('returns tag with error class', async function () {
+    const safe = error('msg', { hash: { tag: 'p' } });
     Code.expect(safe).to.be.object();
     Code.expect(safe.string).to.equal('<p class="error">msg</p>');
+  });
 
-    done();
+  lab.test('escapes the message', async function () {
+    const safe = error('<img src=x onerror=alert(1)>', { hash: {} });
+    Code.expect(safe.string).to.equal('<span class="error">&lt;img src&#x3D;x onerror&#x3D;alert(1)&gt;</span>');
   });
 });

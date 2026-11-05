@@ -1,74 +1,54 @@
-var Lab = require('lab');
-var Code = require('code');
-var Hapi = require('hapi');
+const Lab = require('@hapi/lab');
+const Code = require('@hapi/code');
+const Support = require('../../../support/server');
 
-var PublicPlugin = require('../../../../server/web/public');
+const PublicPlugin = require('../../../../server/web/public');
 
-var lab = exports.lab = Lab.script();
-var request, server;
+const lab = exports.lab = Lab.script();
+let request, server;
 
-lab.beforeEach(function (done) {
-  var plugins = [ require('inert'), PublicPlugin ];
-  server = new Hapi.Server();
-  server.connection();
-  server.register(plugins, done);
+lab.beforeEach(async () => {
+  server = await Support.createServer({ views: false, plugins: [require('@hapi/inert'), PublicPlugin] });
 });
 
 lab.experiment('Public', function () {
-  lab.beforeEach(function (done) {
+  lab.beforeEach(async function () {
     request = {
       method: 'GET'
     };
-
-    done();
   });
 
-  lab.test('it serves apple-touch-icon.png', function (done) {
+  lab.test('it serves apple-touch-icon.png', async function () {
     request.url = '/public/apple-touch-icon.png';
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
   });
 
-  lab.test('it serves favicon.ico', function (done) {
+  lab.test('it serves favicon.ico', async function () {
     request.url = '/public/favicon.ico';
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
   });
 
   lab.experiment('_css', function () {
-    lab.test('it serves main.css', function (done) {
+    lab.test('it serves main.css', async function () {
       request.url = '/public/_css/main.css';
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
   });
 
   lab.experiment('_js', function () {
-    lab.test('it serves main.js', function (done) {
+    lab.test('it serves main.js', async function () {
       request.url = '/public/_js/main.js';
-      server.inject(request, function (response) {
-        Code.expect(response.statusCode).to.equal(200);
-
-        done();
-      });
+      const response = await server.inject(request);
+      Code.expect(response.statusCode).to.equal(200);
     });
   });
 
-  lab.test('it serves robots.txt', function (done) {
+  lab.test('it serves robots.txt', async function () {
     request.url = '/robots.txt';
-    server.inject(request, function (response) {
-      Code.expect(response.statusCode).to.equal(200);
-
-      done();
-    });
+    const response = await server.inject(request);
+    Code.expect(response.statusCode).to.equal(200);
   });
 });

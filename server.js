@@ -1,19 +1,24 @@
-var composer = require('./index');
+'use strict';
 
-composer(function (err, server) {
-  if (err) {
-    throw err;
-  }
+const composer = require('./index');
 
-  server.start(function () {
-    server.log('info', 'Server running at: ' + server.info.uri);
+const main = async () => {
+  const server = await composer();
 
-    process.on('SIGTERM', function () {
-      server.log('info', 'Received SIGTERM. Attempting to stop server');
-      server.stop({ timeout: 10000 }, function () {
-        server.log('info', 'Server stopped. Exiting');
-        process.exit(0);
-      });
+  await server.start();
+  server.log('info', `Server running at: ${server.info.uri}`);
+
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, async () => {
+      server.log('info', `Received ${signal}. Attempting to stop server`);
+      await server.stop({ timeout: 10000 });
+      server.log('info', 'Server stopped. Exiting');
+      process.exit(0);
     });
-  });
+  }
+};
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });

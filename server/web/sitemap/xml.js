@@ -1,28 +1,23 @@
-exports.register = function (server, options, next) {
+'use strict';
+
+const register = (server) => {
   const pagesRepo = server.plugins['repositories/pages'];
 
   server.route({
     method: 'GET',
     path: '/sitemap.xml',
-    handler: function (request, reply) {
-      pagesRepo.getSitemap()
-        .then(function (items) {
-          reply
-            .view('sitemap/xml', {
-              items: items
-            }, {
-              layout: false
-            })
-            .header('Content-Type', 'application/xml;charset=UTF-8');
-        })
-        .catch(reply);
+    handler: async (request, h) => {
+      const items = await pagesRepo.getSitemap();
+
+      return h
+        .view('sitemap/xml', { items }, { layout: false })
+        .header('Content-Type', 'application/xml;charset=UTF-8');
     }
   });
-
-  return next();
 };
 
-exports.register.attributes = {
+exports.plugin = {
   name: 'web/sitemap',
-  dependencies: ['repositories/pages']
+  dependencies: ['repositories/pages'],
+  register
 };
