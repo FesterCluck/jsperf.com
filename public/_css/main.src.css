@@ -112,6 +112,7 @@ tbody th div {
 }
 
 td.results {
+	background: #ddd;
 	text-align: center;
 	border-right: 0;
 }
