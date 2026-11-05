@@ -230,11 +230,15 @@ lab.experiment('web/test plugin', function () {
       Code.expect(rows.eq(7).find('th').text()).to.equal('+3 more');
 
       // the space rows have a heading of their own, and what is not a call says what it is
-      const headings = $('tr.complexity-heading th').map((i, el) => $(el).text()).get();
+      const headings = $('tr.complexity-heading th[colspan]').map((i, el) => $(el).text()).get();
       Code.expect(headings.length).to.equal(2);
       Code.expect(headings[0]).to.startWith('Time');
       Code.expect(headings[1]).to.startWith('Space');
       Code.expect(headings[1]).to.include('beyond the inputs');
+      // each heading spans the call and breakdown columns, and the third column is headed Overall
+      Code.expect($('tr.complexity-heading th[colspan=2]').length).to.equal(2);
+      Code.expect($('tr.complexity-heading th[colspan=3]').length).to.equal(0);
+      Code.expect($('tr.complexity-heading th[scope=col]').map((i, el) => $(el).text()).get()).to.equal(['Overall', 'Overall']);
       Code.expect(rows.eq(2).find('.complexity-tag').length).to.equal(0);
       Code.expect(rows.eq(3).find('.complexity-tag').text()).to.equal('variable');
       Code.expect(rows.eq(3).find('th code').text()).to.equal('out');
