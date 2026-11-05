@@ -178,7 +178,8 @@
         </tr>
         {{#with complexityView}}
           <tr class="complexity-heading">
-            <th scope="colgroup" colspan="3">Time <small>how the work grows with the size of the input, one row per call</small></th>
+            <th scope="colgroup" colspan="2">Time <small>how the work grows with the size of the input, one row per call</small></th>
+            <th scope="col">Overall</th>
           </tr>
           {{#each calls}}
             <tr class="complexity-row{{#if end}} complexity-end{{/if}}{{#if ../unknown}} complexity-unknown{{/if}}">
@@ -212,7 +213,8 @@
           {{/if}}
           {{#with space}}
             <tr class="complexity-heading">
-              <th scope="colgroup" colspan="3">Space <small>the most held at once beyond the inputs, one row for each variable, loop and call of the test</small></th>
+              <th scope="colgroup" colspan="2">Space <small>the most held at once beyond the inputs, one row for each variable, loop and call of the test</small></th>
+            <th scope="col">Overall</th>
             </tr>
             {{#each items}}
               <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}">
