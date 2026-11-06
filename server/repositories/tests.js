@@ -7,16 +7,13 @@ const table = 'tests';
 
 const register = (server, options) => {
   const db = server.plugins.db;
-  const columns = ['pageID', 'title', 'defer', 'code', 'complexity'];
-
-  // JSON column: NULL until the test has been analyzed
-  const json = (value) => (value ? db.escape(JSON.stringify(value)) : 'NULL');
+  const columns = ['pageID', 'title', 'defer', 'code'];
 
   server.expose('bulkCreate', function (pageID, tests) {
     let values = [];
     for (let i = 0, tl = tests.length; i < tl; i++) {
       const test = tests[i];
-      values.push('(' + db.escape(pageID) + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ', ' + json(test.complexity) + ')');
+      values.push('(' + db.escape(pageID) + ', ' + db.escape(test.title) + ', ' + db.escape(test.defer) + ', ' + db.escape(test.code) + ')');
     }
 
     values = values.join(', ');
@@ -44,9 +41,9 @@ const register = (server, options) => {
         // ... otherwise skip over the test
       } else {
         if (isOwn && test.testID) {
-          queries.push(db.genericQuery('UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?', [table, test.title, test.defer, test.code, test.complexity ? JSON.stringify(test.complexity) : null, pageID, test.testID]));
+          queries.push(db.genericQuery('UPDATE ?? SET title = ?, defer = ?, code = ? WHERE pageID = ? AND testID = ?', [table, test.title, test.defer, test.code, pageID, test.testID]));
         } else {
-          queries.push(db.genericQuery('INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)', [table, columns, pageID, test.title, test.defer, test.code, test.complexity ? JSON.stringify(test.complexity) : null]));
+          queries.push(db.genericQuery('INSERT INTO ?? (??) VALUES (?, ?, ?, ?)', [table, columns, pageID, test.title, test.defer, test.code]));
         }
       }
     });
@@ -62,10 +59,6 @@ const register = (server, options) => {
 
       return Promise.resolve(results);
     });
-  });
-
-  server.expose('setComplexity', function (testID, complexity) {
-    return db.genericQuery('UPDATE ?? SET complexity = ? WHERE testID = ?', [table, JSON.stringify(complexity), testID]);
   });
 
   server.expose('findByPageID', function (pageID) {

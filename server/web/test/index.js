@@ -9,7 +9,6 @@ const ownership = require('../../lib/ownership');
 const schema = require('../../lib/schema');
 const basePath = require('../../lib/basePath');
 const defaults = require('../../lib/defaults');
-const complexity = require('../../lib/complexity');
 const userAgent = require('../../lib/userAgent');
 const clientIp = require('../../lib/clientIp');
 
@@ -29,7 +28,7 @@ const register = (server, options) => {
     return pagesService.getBySlug(request.params.testSlug, request.params.rev || 1)
       .then(values => {
         const page = values[0];
-        page.test = values[1].map((test) => Object.assign({}, test, { complexityView: complexity.present(test.complexity, userAgent.engine(request.headers['user-agent'])) }));
+        page.test = values[1];
         page.revisions = values[2];
         page.comments = values[3];
 
@@ -88,7 +87,6 @@ const register = (server, options) => {
           pageInit: page.initHTML.includes('function init()'),
           hasPrep,
           hasSetupOrTeardown,
-          hasComplexity: page.test.some((test) => test.complexityView),
           stripped,
           page
         };

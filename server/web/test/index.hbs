@@ -69,89 +69,12 @@
   {{/if}}
 {{/if}}
 
-{{#if hasComplexity}}
-  <svg width="0" height="0" style="position:absolute; width:0; height:0; overflow:hidden;" aria-hidden="true">
-    <defs>
-      <g id="bigo-guides" fill="none" stroke="#000" stroke-opacity="0.12" stroke-width="1">
-        <path d="M5,23 L52,23"/>
-        <path d="M5,25 Q18,16 52,15"/>
-        <path d="M5,25 L52,4"/>
-        <path d="M5,25 Q26,20 42,3"/>
-        <path d="M5,25 Q16,25 25,3"/>
-        <polyline points="5,2 5,25 52,25" stroke-opacity="0.35" stroke-width="1.2"/>
-      </g>
-      <g id="curve-o1">
-        <use href="#bigo-guides"/>
-        <path d="M5,23 L52,23" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="52" cy="23" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-ologn">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q18,16 52,15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="52" cy="15" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-on">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 L52,4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="52" cy="4" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-onlogn">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q26,20 42,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="42" cy="3" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-on2">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q16,25 25,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="25" cy="3" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-on3">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q11,25 17,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="17" cy="3" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-higher">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q8,25 11,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="11" cy="3" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-ologn2">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q24,15 52,9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="52" cy="9" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-onlogn2">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q21,22 33,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="33" cy="3" r="2.3" fill="currentColor"/>
-      </g>
-      <g id="curve-oexp">
-        <use href="#bigo-guides"/>
-        <path d="M5,25 Q6,25 8,3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-        <circle cx="8" cy="3" r="2.3" fill="currentColor"/>
-        <text x="30" y="14" text-anchor="middle" font-size="12" font-weight="bold" fill="currentColor">2ⁿ</text>
-      </g>
-      <g id="icon-space">
-        <rect x="1" y="1" width="10" height="3" rx="1" fill="currentColor"/>
-        <rect x="1" y="4.5" width="10" height="3" rx="1" fill="currentColor" opacity=".7"/>
-        <rect x="1" y="8" width="10" height="3" rx="1" fill="currentColor" opacity=".4"/>
-      </g>
-      <g id="curve-unknown">
-        <use href="#bigo-guides"/>
-        <text x="29" y="21" text-anchor="middle" font-size="20" font-weight="bold" fill="currentColor">?</text>
-      </g>
-    </defs>
-  </svg>
-{{/if}}
-
 <section id="runner">
   <h2>Test runner</h2>
   <p id="firebug"><strong>Warning! For accurate results, please disable Firebug before running the tests. <a href="{{@root.base}}/faq#firebug-warning">(Why?)</a></strong></p>
   <p id="java"><strong>Java applet disabled.</strong></p>
   <p id="status"><noscript><strong>To run the tests, please <a href="http://www.enable-javascript.com/">enable JavaScript</a> and reload the page.</strong></noscript></p>
   <div id="controls"><button id="run" type="button"></button></div>
-  <input type="checkbox" id="show-breakdown" checked>
-  <label for="show-breakdown" id="breakdown-toggle">Show what each call, variable and loop is made of</label>
   <table id="test-table">
   <caption>Testing in {{userAgent}}</caption>
     <thead>
@@ -176,78 +99,6 @@
           </td>
           <td id="results-{{inc @index}}" class="results">pending…</td>
         </tr>
-        {{#with complexityView}}
-          <tr class="complexity-heading">
-            <th scope="colgroup" colspan="2">Time <small>how the work grows with the size of the input, one row per call</small></th>
-            <th scope="col">Overall</th>
-          </tr>
-          {{#each calls}}
-            <tr class="complexity-row{{#if end}} complexity-end{{/if}}{{#if ../unknown}} complexity-unknown{{/if}}">
-              <th scope="row"><code>{{code}}</code></th>
-              <td class="complexity-breakdown">
-                <div class="bigo-line">
-                  <span class="bigo-graph bigo-{{cls}}" title="{{label}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
-                  {{> bigo-steps}}
-                </div>
-              </td>
-              {{#if @first}}
-                <td class="complexity-total" rowspan="{{../rows}}">
-                  <span class="bigo-graph bigo-{{../overall.cls}}" title="{{../overall.label}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{../overall.curve}}"/></svg></span>
-                </td>
-              {{/if}}
-            </tr>
-          {{else}}
-            <tr class="complexity-row complexity-end{{#if unknown}} complexity-unknown{{/if}}">
-              <th scope="row"><em>no function calls</em></th>
-              <td class="complexity-breakdown"></td>
-              <td class="complexity-total">
-                <span class="bigo-graph bigo-{{overall.cls}}" title="{{overall.label}}"><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
-              </td>
-            </tr>
-          {{/each}}
-          {{#if more}}
-            <tr class="complexity-row complexity-end">
-              <th scope="row"><em>+{{more}} more</em></th>
-              <td class="complexity-breakdown"></td>
-            </tr>
-          {{/if}}
-          {{#with space}}
-            <tr class="complexity-heading">
-              <th scope="colgroup" colspan="2">Space <small>the most held at once beyond the inputs, one row for each variable, loop and call of the test</small></th>
-            <th scope="col">Overall</th>
-            </tr>
-            {{#each items}}
-              <tr class="complexity-row space-row{{#if end}} complexity-end{{/if}}">
-                <th scope="row">{{#if code}}<code>{{code}}</code>{{/if}}{{#if tag}} <small class="complexity-tag">{{tag}}</small>{{/if}}</th>
-                <td class="complexity-breakdown">
-                  <div class="bigo-line">
-                    <span class="bigo-graph space-graph bigo-{{cls}}" title="{{label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{curve}}"/></svg></span>
-                    {{> bigo-steps space=true}}
-                  </div>
-                </td>
-                {{#if @first}}
-                  <td class="complexity-total" rowspan="{{../rows}}">
-                    <span class="bigo-graph space-graph bigo-{{../overall.cls}}" title="{{../overall.label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{../overall.curve}}"/></svg></span>
-                  </td>
-                {{/if}}
-              </tr>
-            {{else}}
-              <tr class="complexity-row space-row complexity-end">
-                <th scope="row"></th>
-                <td class="complexity-breakdown"></td>
-                <td class="complexity-total">
-                  <span class="bigo-graph space-graph bigo-{{overall.cls}}" title="{{overall.label}}"><svg class="space-icon" viewBox="0 0 12 12" aria-hidden="true"><use href="#icon-space"/></svg><svg viewBox="0 0 56 28" aria-hidden="true"><use href="#{{overall.curve}}"/></svg></span>
-                </td>
-              </tr>
-            {{/each}}
-            {{#if more}}
-              <tr class="complexity-row space-row complexity-end">
-                <th scope="row"><em>+{{more}} more</em></th>
-                <td class="complexity-breakdown"></td>
-              </tr>
-            {{/if}}
-          {{/with}}
-        {{/with}}
       {{/each}}
     </tbody>
   </table>

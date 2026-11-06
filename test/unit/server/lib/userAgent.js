@@ -56,23 +56,4 @@ describe('lib/userAgent', () => {
     expect(userAgent(undefined)).to.equal('Other');
     expect(userAgent({})).to.equal('Other');
   });
-
-  describe('engine', () => {
-    const chrome = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
-
-    it('is v8 for Chromium based browsers', () => {
-      expect(userAgent.engine(chrome)).to.equal('v8');
-      expect(userAgent.engine(chrome + ' Edg/142.0.0.0')).to.equal('v8');
-      expect(userAgent.engine('Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/142.0.0.0 Safari/537.36')).to.equal('v8');
-      expect(userAgent.engine('Mozilla/5.0 (X11; Linux) Chromium/120.0.0.0 Safari/537.36')).to.equal('v8');
-    });
-
-    it('is spec for everything else, including Chrome on iOS', () => {
-      expect(userAgent.engine('Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0')).to.equal('spec');
-      expect(userAgent.engine('Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15')).to.equal('spec');
-      expect(userAgent.engine('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0.0.0 Mobile/15E148 Safari/604.1')).to.equal('spec');
-      expect(userAgent.engine('Mozilla/5.0 (iPad) Chrome/142.0.0.0 Safari/604.1')).to.equal('spec');
-      expect(userAgent.engine(undefined)).to.equal('spec');
-    });
-  });
 });

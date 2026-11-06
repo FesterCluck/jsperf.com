@@ -57,20 +57,13 @@ lab.experiment('Tests Repository', function () {
       await tests.bulkCreate(pageID, t);
       Code.expect(
         genericQueryStub.calledWithExactly(
-          'INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`, NULL), (`1`, `t2`, `n`, `a = 2`, NULL)',
+          'INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`), (`1`, `t2`, `n`, `a = 2`)',
           [
             'tests',
-            ['pageID', 'title', 'defer', 'code', 'complexity']
+            ['pageID', 'title', 'defer', 'code']
           ]
         )
       ).to.be.true();
-    });
-
-    lab.test('stores the complexity estimate as JSON', async function () {
-      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-
-      await tests.bulkCreate(pageID, [{ title: 't1', defer: 'n', code: 'a = 1', complexity: { estimate: true, overall: 'o1', calls: [] } }]);
-      Code.expect(genericQueryStub.getCall(0).args[0]).to.equal('INSERT INTO ?? (??) VALUES (`1`, `t1`, `n`, `a = 1`, `{"estimate":true,"overall":"o1","calls":[]}`)');
     });
 
     lab.test('returns an error when not enough rows inserted', async function () {
@@ -120,21 +113,7 @@ lab.experiment('Tests Repository', function () {
       let call1 = genericQueryStub.getCall(0).args;
       call1 = Hoek.flatten(call1).join(',');
 
-      Code.expect(call1).to.equal('INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?),tests,pageID,title,defer,code,complexity,1,t1,n,a = 1,');
-    });
-
-    lab.test('updates and inserts the complexity estimate', async function () {
-      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-      const estimate = { overall: 'on', calls: [] };
-      const json = '{"overall":"on","calls":[]}';
-
-      await tests.bulkUpdate(pageID, [
-        { testID: 5, title: 't1', defer: 'n', code: 'a = 1', complexity: estimate },
-        { title: 't2', defer: 'n', code: 'a = 2', complexity: estimate }
-      ], true);
-
-      Code.expect(genericQueryStub.getCall(0).args).to.equal(['UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?', ['tests', 't1', 'n', 'a = 1', json, 1, 5]]);
-      Code.expect(genericQueryStub.getCall(1).args).to.equal(['INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)', ['tests', ['pageID', 'title', 'defer', 'code', 'complexity'], 1, 't2', 'n', 'a = 2', json]]);
+      Code.expect(call1).to.equal('INSERT INTO ?? (??) VALUES (?, ?, ?, ?),tests,pageID,title,defer,code,1,t1,n,a = 1');
     });
 
     lab.test('returns the result of each update', async function () {
@@ -154,9 +133,9 @@ lab.experiment('Tests Repository', function () {
       const call1 = genericQueryStub.getCall(0).args;
       const call2 = genericQueryStub.getCall(1).args;
 
-      const sql = 'UPDATE ?? SET title = ?, defer = ?, code = ?, complexity = ? WHERE pageID = ? AND testID = ?';
-      Code.expect(call2).to.equal([sql, ['tests', 't2', 'n', 'a = 2', null, 1, 321]]);
-      Code.expect(call1).to.equal([sql, ['tests', 't1', 'n', 'a = 1', null, 1, 123]]);
+      const sql = 'UPDATE ?? SET title = ?, defer = ?, code = ? WHERE pageID = ? AND testID = ?';
+      Code.expect(call2).to.equal([sql, ['tests', 't2', 'n', 'a = 2', 1, 321]]);
+      Code.expect(call1).to.equal([sql, ['tests', 't1', 'n', 'a = 1', 1, 123]]);
     });
 
     lab.test('inserts new test if user is not the original owner', async function () {
@@ -167,10 +146,10 @@ lab.experiment('Tests Repository', function () {
       await tests.bulkUpdate(pageID, tClone, false);
       const call1 = genericQueryStub.getCall(0).args;
       const call2 = genericQueryStub.getCall(1).args;
-      const sql = 'INSERT INTO ?? (??) VALUES (?, ?, ?, ?, ?)';
-      const columns = ['pageID', 'title', 'defer', 'code', 'complexity'];
-      Code.expect(call2).to.equal([sql, ['tests', columns, 1, 't2', 'n', 'a = 2', null]]);
-      Code.expect(call1).to.equal([sql, ['tests', columns, 1, 't1', 'n', 'a = 1', null]]);
+      const sql = 'INSERT INTO ?? (??) VALUES (?, ?, ?, ?)';
+      const columns = ['pageID', 'title', 'defer', 'code'];
+      Code.expect(call2).to.equal([sql, ['tests', columns, 1, 't2', 'n', 'a = 2']]);
+      Code.expect(call1).to.equal([sql, ['tests', columns, 1, 't1', 'n', 'a = 1']]);
     });
 
     lab.test('deletes existing test if no title and no code', async function () {
@@ -246,15 +225,6 @@ lab.experiment('Tests Repository', function () {
       const err = await Code.expect(tests.bulkUpdate(pageID, t, false)).to.reject();
       Code.expect(err).to.be.instanceof(Error);
       Code.expect(err.message).to.equal('Not all tests inserted');
-    });
-  });
-
-  lab.experiment('setComplexity', function () {
-    lab.test('stores the estimate for one test', async function () {
-      genericQueryStub.returns(Promise.resolve({ affectedRows: 1 }));
-
-      await tests.setComplexity(7, { overall: 'o1', calls: [] });
-      Code.expect(genericQueryStub.calledWithExactly('UPDATE ?? SET complexity = ? WHERE testID = ?', ['tests', '{"overall":"o1","calls":[]}', 7])).to.be.true();
     });
   });
 

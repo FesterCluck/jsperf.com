@@ -4,11 +4,10 @@ const Support = require('../../../support/server');
 const sinon = require('sinon');
 
 const Pages = require('../../../../server/services/pages');
-const complexity = require('../../../../server/lib/complexity');
 
 const MockPagesRepo = Support.mock('repositories/pages', ['get', 'create', 'updateById', 'getPopularRecent', 'getPopularAllTime', 'find', 'updateHits', 'getBySlug', 'findBySlug', 'getVisibleBySlug', 'findVisibleBySlug']);
 
-const MockTestsRepo = Support.mock('repositories/tests', ['bulkCreate', 'bulkUpdate', 'findByPageID', 'setComplexity']);
+const MockTestsRepo = Support.mock('repositories/tests', ['bulkCreate', 'bulkUpdate', 'findByPageID']);
 
 const MockCommentsRepo = Support.mock('repositories/comments', ['findByPageID']);
 
@@ -41,8 +40,7 @@ lab.experiment('Pages Service', function () {
     testsRepoStub = {
       bulkCreate: s.stub(server.plugins['repositories/tests'], 'bulkCreate'),
       bulkUpdate: s.stub(server.plugins['repositories/tests'], 'bulkUpdate'),
-      findByPageID: s.stub(server.plugins['repositories/tests'], 'findByPageID'),
-      setComplexity: s.stub(server.plugins['repositories/tests'], 'setComplexity').resolves()
+      findByPageID: s.stub(server.plugins['repositories/tests'], 'findByPageID')
     };
 
     commentsRepoStub = {
@@ -132,22 +130,6 @@ lab.experiment('Pages Service', function () {
       testsRepoStub.bulkCreate.returns(Promise.resolve());
 
       await pages.create(payload);
-    });
-
-    lab.test('stores a complexity estimate with every test, using the page setup code', async function () {
-      pagesRepoStub.create.returns(Promise.resolve(3));
-      testsRepoStub.bulkCreate.returns(Promise.resolve());
-      payload = {
-        setup: 'function lin(a) { for (var i = 0; i < a.length; i++) {} }',
-        test: [{ title: 'a', defer: 'n', code: 'lin(data)' }, { title: 'b', defer: 'n', code: 'Math.abs(1)' }]
-      };
-
-      await pages.create(payload);
-      const [pageID, tests] = testsRepoStub.bulkCreate.getCall(0).args;
-      Code.expect(pageID).to.equal(3);
-      Code.expect(tests.map((t) => t.complexity.overall)).to.equal(['on', 'o1']);
-      Code.expect(tests[0].title).to.equal('a');
-      Code.expect(payload.test[0].complexity).to.be.undefined();
     });
 
     lab.test('returns error if page fails to create', async function () {
@@ -247,17 +229,6 @@ lab.experiment('Pages Service', function () {
       await pages.edit(payload, true);
     });
 
-    lab.test('recomputes the complexity estimate when editing', async function () {
-      pagesRepoStub.updateById.returns(Promise.resolve(123));
-      testsRepoStub.bulkUpdate.returns(Promise.resolve());
-
-      await pages.edit({ test: [{ testID: 1, title: 'a', defer: 'n', code: 'data.sort()' }] }, true, 1, 123);
-      const [pageID, tests, isOwn] = testsRepoStub.bulkUpdate.getCall(0).args;
-      Code.expect(pageID).to.equal(123);
-      Code.expect(isOwn).to.be.true();
-      Code.expect(tests[0].complexity.overall).to.equal('onlogn');
-    });
-
     lab.test('edits page by calling pageRepo.updateById', async function () {
       pagesRepoStub.updateById.returns(Promise.resolve());
       testsRepoStub.bulkUpdate.returns(Promise.resolve());
@@ -354,7 +325,7 @@ lab.experiment('Pages Service', function () {
       const testErrMsg = 'testing';
       const testErr = new Error(testErrMsg);
       pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1 }]));
-      testsRepoStub.findByPageID.returns(Promise.resolve([]));
+      testsRepoStub.findByPageID.returns(Promise.resolve());
       pagesRepoStub.findBySlug.returns(Promise.reject(testErr));
 
       const err = await Code.expect(pages.getBySlug(slug, rev)).to.reject();
@@ -366,7 +337,7 @@ lab.experiment('Pages Service', function () {
       const testErrMsg = 'testing';
       const testErr = new Error(testErrMsg);
       pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1 }]));
-      testsRepoStub.findByPageID.returns(Promise.resolve([]));
+      testsRepoStub.findByPageID.returns(Promise.resolve());
       pagesRepoStub.findBySlug.returns(Promise.resolve());
       commentsRepoStub.findByPageID.returns(Promise.reject(testErr));
 
@@ -389,61 +360,6 @@ lab.experiment('Pages Service', function () {
       Code.expect(values[1]).to.equal(mockTests);
       Code.expect(values[2]).to.equal(mockPages);
       Code.expect(values[3]).to.equal(mockComments);
-    });
-
-    lab.test('analyzes and stores the estimate of tests that have none yet', async function () {
-      const stored = { estimate: true, version: complexity.VERSION, overall: 'ologn', calls: [], space: { overall: 'o1', items: [], variables: [] } };
-      const mockTests = [
-        { testID: 1, code: 'data.sort()', complexity: null },
-        { testID: 2, code: 'Math.abs(1)', complexity: stored },
-        { testID: 3, code: 'lin(data)', complexity: null }
-      ];
-      pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1, setup: 'function lin(a) { for (var i = 0; i < a.length; i++) {} }', initHTML: '', teardown: '' }]));
-      testsRepoStub.findByPageID.returns(Promise.resolve(mockTests));
-      pagesRepoStub.findBySlug.returns(Promise.resolve([]));
-      commentsRepoStub.findByPageID.returns(Promise.resolve([]));
-
-      const values = await pages.getBySlug(slug, rev);
-      Code.expect(values[1].map((t) => t.complexity.overall)).to.equal(['onlogn', 'ologn', 'on']);
-      Code.expect(testsRepoStub.setComplexity.callCount).to.equal(2);
-      Code.expect(testsRepoStub.setComplexity.getCall(0).args[0]).to.equal(1);
-      Code.expect(testsRepoStub.setComplexity.getCall(1).args[0]).to.equal(3);
-      Code.expect(testsRepoStub.setComplexity.getCall(1).args[1].overall).to.equal('on');
-    });
-
-    lab.test('analyzes again estimates stored by an older version of the rules', async function () {
-      const mockTests = [{ testID: 1, code: 'Math.abs(1)', complexity: { version: complexity.VERSION - 1, overall: 'on', calls: [] } }];
-      pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1, setup: '', initHTML: '', teardown: '' }]));
-      testsRepoStub.findByPageID.returns(Promise.resolve(mockTests));
-      pagesRepoStub.findBySlug.returns(Promise.resolve([]));
-      commentsRepoStub.findByPageID.returns(Promise.resolve([]));
-
-      const values = await pages.getBySlug(slug, rev);
-      Code.expect(values[1][0].complexity.overall).to.equal('o1');
-      Code.expect(testsRepoStub.setComplexity.calledOnce).to.be.true();
-    });
-
-    lab.test('does not touch the database when every test already has an estimate', async function () {
-      const mockTests = [{ testID: 1, code: 'x', complexity: { version: complexity.VERSION, overall: 'o1', calls: [], space: { overall: 'o1', items: [], variables: [] } } }];
-      pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1 }]));
-      testsRepoStub.findByPageID.returns(Promise.resolve(mockTests));
-      pagesRepoStub.findBySlug.returns(Promise.resolve([]));
-      commentsRepoStub.findByPageID.returns(Promise.resolve([]));
-
-      await pages.getBySlug(slug, rev);
-      Code.expect(testsRepoStub.setComplexity.called).to.be.false();
-    });
-
-    lab.test('still resolves when the estimate cannot be stored', async function () {
-      const mockTests = [{ testID: 1, code: 'Math.abs(1)', complexity: null }];
-      pagesRepoStub.getBySlug.returns(Promise.resolve([{ id: 1 }]));
-      testsRepoStub.findByPageID.returns(Promise.resolve(mockTests));
-      pagesRepoStub.findBySlug.returns(Promise.resolve([]));
-      commentsRepoStub.findByPageID.returns(Promise.resolve([]));
-      testsRepoStub.setComplexity.rejects(new Error('read only'));
-
-      const values = await pages.getBySlug(slug, rev);
-      Code.expect(values[1][0].complexity.overall).to.equal('o1');
     });
 
     lab.test('rejects with error if page not found', async () => {

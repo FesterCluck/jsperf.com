@@ -1,5 +1,0 @@
-var DATA_SIZE = 48;
-var sharedData = generateDataset(DATA_SIZE, 42);
-var sortedData = sharedData.slice().sort(compareAsc);
-var targetKeys = [sortedData[3], sortedData[15], sortedData[29], sortedData[44], -1];
-var sink = 0;
